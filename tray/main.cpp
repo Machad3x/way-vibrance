@@ -653,6 +653,18 @@ public:
         layout->addWidget(new QLabel(tr("Vibrance of matching windows"), this));
         makeSliderRow(layout, QString(), QString(), kMinPercent, m_vibSlider, m_vibValue);
 
+        // Quick values, same set as the global presets row.
+        auto *presetRow = new QHBoxLayout();
+        for (int percent : {100, 125, 150, 200}) {
+            auto *presetButton = new QPushButton(QStringLiteral("%1%").arg(percent), this);
+            connect(presetButton, &QPushButton::clicked, this, [this, percent] {
+                m_vibSlider->setValue(percent); // the valueChanged path marks dirty and refreshes the label
+            });
+            presetRow->addWidget(presetButton);
+        }
+        presetRow->addStretch();
+        layout->addLayout(presetRow);
+
         if (fullApi) {
             m_gainsBox = new QGroupBox(tr("Channel gains (these windows only)"), this);
             auto *gainsLayout = new QVBoxLayout(m_gainsBox);
@@ -686,7 +698,7 @@ public:
         });
         connect(m_pattern, &QLineEdit::textChanged, this, [this] { validate(); markDirty(); });
 
-        resize(420, fullApi ? 320 : 190);
+        resize(420, fullApi ? 340 : 220);
         updateButtons();
     }
 
