@@ -52,21 +52,29 @@ System tray menu:
     are additionally routed through `OffscreenEffect` with a custom GLSL
     shader multiplying the channels in linear space. With all channels at
     100% nothing is redirected and the cost is back to zero.
+  - **Per-app profiles**: a rule list maps a glob (matched, case-insensitively,
+    against the Wayland `app_id` / X11 `WM_CLASS`, or the window caption when
+    the pattern is `title:`-prefixed) to its own vibrance value. Matching
+    windows override the global value through the same built-in saturation
+    uniform — per window, even while unfocused, at zero extra GPU cost.
   - Values persist to `kwinrc` (`[Effect-wayvibrance]` → `Vibrance`,
-    `Enabled`, `PrimaryOnly`, `RedGain`, `GreenGain`, `BlueGain`).
+    `Enabled`, `PrimaryOnly`, `RedGain`, `GreenGain`, `BlueGain`; profiles in
+    the child group `[Effect-wayvibrance][WayVibranceAppRules]`).
   - Live, flicker-free control over **D-Bus**: service `org.wayvibrance`,
     object `/Vibrance`, interface `org.wayvibrance`, with methods
     `vibrance`, `setVibrance`, `enabled`, `setEnabled`, `toggleEnabled`,
     `primaryOnly`, `setPrimaryOnly`, `redGain`/`greenGain`/`blueGain`,
-    `setRGBGains(r,g,b)` and signals `vibranceChanged`, `enabledChanged`,
-    `rgbGainsChanged`, `primaryOnlyChanged`.
+    `setRGBGains(r,g,b)`, `appRules`, `setAppRule(pattern,vibrance)`,
+    `removeAppRule(pattern)`, `clearAppRules`, `lastFocusedAppId` and signals
+    `vibranceChanged`, `enabledChanged`, `rgbGainsChanged`,
+    `primaryOnlyChanged`, `appRulesChanged`.
 - **`tray/`** — `wayvibrance-tray`: Qt 6 tray app (throttled live slider,
-  three RGB channel sliders with Reset, presets, enable toggle,
-  configurable global hotkey, autostart, behaviour settings) — this is the
-  vibrance-gui "GUI".
+  three RGB channel sliders with Reset, presets, enable toggle, per-app
+  profile editor, configurable global hotkey, autostart, behaviour settings)
+  — this is the vibrance-gui "GUI".
 - **`cli/`** — `wayvibrance`: terminal control (`wayvibrance 1.25`,
   `wayvibrance toggle`, `wayvibrance get`, `wayvibrance rgb R G B`,
-  `wayvibrance primary on|off|get`).
+  `wayvibrance primary on|off|get`, `wayvibrance app list|set|del|reset|focused`).
 
 ## Requirements
 
@@ -93,6 +101,14 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 - Tray/window: vibrance slider 0–200%, **three per-channel gain sliders
   (R/G/B, 0–200%) with "Reset RGB"**, presets (100/125/150/200%), enable
   toggle.
+- **Per-app profiles** (tray group *Per-app profiles*): each profile pairs a
+  glob with a vibrance value — `app:` patterns (the default) match the
+  Wayland app_id / X11 WM_CLASS, `title:` patterns match the window caption
+  (e.g. `title:*Elden Ring*`); `*` and `?` are wildcards. "*From last
+  focused…*" pre-fills the app ID of the window you used last, so adding a
+  game takes two clicks. Matching windows use the profile value instead of
+  the global one — **even in the background**, unlike vibrance-gui's
+  focus-based switching, and with no extra GPU cost.
 - **Global hotkey**: unbound by default (we don't fight Plasma's own
   shortcuts). Click the *Global hotkey* field and press a combination —
   applied and persisted immediately (in `wayvibrancerc`, re-registered with
@@ -107,9 +123,11 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
   untouched).
 - CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
   `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` ·
-  `wayvibrance primary on`
-- Neutral state (`1.0` everywhere) ⇒ `isActive() == false` ⇒ the effect is
-  out of the rendering chain: **zero cost**.
+  `wayvibrance primary on` · `wayvibrance app list` ·
+  `wayvibrance app set firefox 1.5` · `wayvibrance app del 'title:*War*'` ·
+  `wayvibrance app focused`
+- Neutral state (`1.0` everywhere, no profiles) ⇒ `isActive() == false` ⇒
+  the effect is out of the rendering chain: **zero cost**.
 
 ## Parity with vibrance-gui
 
@@ -123,7 +141,7 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 | Presets | profiles | 100/125/150/200% | ✅ |
 | Toggle hotkey | ✅ | KGlobalAccel, key configurable | ✅ |
 | Apply only to one monitor | — (profile-based) | "primary monitor" mode (active screen) | ✅ |
-| Auto per-app/game profiles | ✅ (window focus) | `windowActivated` + rules | 🔜 next |
+| Auto per-app/game profiles | ✅ (window focus) | per-window rules (`app:`/`title:` globs) — applies even unfocused | ✅ |
 | Distinct value per monitor | ✅ | per-output uniform/scene pass | 🔜 |
 | Sound/OSD on profile switch | ✅ | layer-shell OSD | 🔜 |
 
@@ -147,15 +165,12 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 
 ## Roadmap
 
-1. Per-application profiles: apply a value automatically on
-   `windowActivated` (by `desktopFileName`/`resourceClass`/fullscreen) and
-   revert when leaving — vibrance-gui's flagship feature.
-2. "True" vibrance (protects skin tones — [libvibrant](https://github.com/libvibrant/vibrant-cli)
+1. "True" vibrance (protects skin tones — [libvibrant](https://github.com/libvibrant/vibrant-cli)
    algorithm) as an optional shader mode.
-3. Per-output values with a monitor picker (supersedes the active-screen
+2. Per-output values with a monitor picker (supersedes the active-screen
    proxy).
-4. HDR / wide-gamut correctness (BT.2020 aware grading).
-5. PKGBUILD (AUR-style auto-rebuild) so every KWin update recompiles the
+3. HDR / wide-gamut correctness (BT.2020 aware grading).
+4. PKGBUILD (AUR-style auto-rebuild) so every KWin update recompiles the
    effect for you.
 
 ## Status
@@ -163,6 +178,8 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 Functional and in daily use. Current release: **v0.3.0** — vibrance, RGB
 channel gains, configurable hotkey, behaviour settings (tray-first start,
 autostart, primary-monitor mode), all capped at the real 0–200% range.
+Per-app/game profiles (vibrance-gui's flagship feature, one step further:
+per-window instead of per-focus) are implemented in `main`, pending release.
 
 ## Development
 

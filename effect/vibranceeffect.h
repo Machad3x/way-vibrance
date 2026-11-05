@@ -11,6 +11,7 @@
 #include <effect/offscreeneffect.h>
 
 #include <QDBusAbstractAdaptor>
+#include <QRegularExpression>
 #include <QRegion>
 #include <QVector3D>
 
@@ -145,17 +146,71 @@ public:
     qreal greenGain() const;
     qreal blueGain() const;
 
+    /**
+     * Per-app profiles: vibrance overrides keyed by a glob pattern, the
+     * counterpart of vibrance-gui's per-game settings.
+     *
+     * A pattern is "app:<glob>" (default when no prefix is given) and is
+     * matched case-insensitively against the window's resource identifiers —
+     * the Wayland app_id or the X11 WM_CLASS — or "title:<glob>", matched
+     * against the window caption. '*' and '?' are the wildcards.
+     *
+     * Windows matching a profile are composited with the profile's
+     * vibrance instead of the global one; every other window keeps using
+     * the global value. Profiles ride the same built-in saturation uniform
+     * as the global value, so they cost nothing beyond a per-window lookup.
+     *
+     * The serialized form used by D-Bus and kwinrc is
+     * "<app|title>:<pattern>|<vibrance>".
+     */
+    void setAppRule(const QString &prefixedPattern, qreal vibrance);
+    void removeAppRule(const QString &prefixedPattern);
+    void clearAppRules();
+    QStringList appRules() const;
+
+    /**
+     * Resource class of the most recently activated "real" window (normal,
+     * not one of ours): lets controllers offer "add from last focused".
+     */
+    QString lastFocusedAppId() const;
+
 Q_SIGNALS:
     void vibranceChanged(qreal value);
     void enabledChanged(bool enabled);
     void rgbGainsChanged(qreal red, qreal green, qreal blue);
     void primaryOnlyChanged(bool primaryOnly);
+    void appRulesChanged(const QStringList &rules);
 
 private Q_SLOTS:
     void persist();
     void onWindowAdded(KWin::EffectWindow *w);
+    void onWindowDeleted(KWin::EffectWindow *w);
+    void onWindowActivated(KWin::EffectWindow *w);
 
 private:
+    struct AppRule
+    {
+        QString pattern; // glob without the kind prefix
+        bool titleMatch = false;
+        qreal vibrance = 1.0;
+        QRegularExpression matcher; // compiled in rebuildMatchers()
+    };
+
+    struct WindowMatch
+    {
+        quint64 stamp = 0;
+        QString idA;
+        QString idB;
+        QString caption;
+        int ruleIndex = -1; // index into m_rules; -1 = use the global value
+    };
+
+    qreal vibranceForWindow(EffectWindow *w);
+    void rebuildMatchers();
+    void invalidateMatchCache();
+    static QString serializedRule(const AppRule &rule);
+    static bool parseRule(const QString &serialized, QString &patternOut, bool &titleOut, qreal &vibranceOut);
+
     void reloadConfig();
     bool rgbGainsActive() const;
     bool windowInScope(EffectWindow *w) const;
@@ -167,6 +222,10 @@ private:
     bool m_enabled = true;
     bool m_primaryOnly = false;
     QVector3D m_rgbGains{1.0f, 1.0f, 1.0f};
+    QVector<AppRule> m_rules;
+    QHash<EffectWindow *, WindowMatch> m_windowMatch;
+    quint64 m_matchStamp = 0;
+    QString m_lastFocusedAppId;
     bool m_redirecting = false;
     bool m_shaderFailed = false;
     bool m_dbusRegistered = false;
@@ -184,8 +243,10 @@ private:
  * Methods: vibrance() -> d ; setVibrance(d) ; enabled() -> b ; setEnabled(b)
  *          toggleEnabled() ; primaryOnly() -> b ; setPrimaryOnly(b)
  *          redGain()/greenGain()/blueGain() -> d ; setRGBGains(d, d, d)
+ *          appRules() -> as ; setAppRule(s, d) ; removeAppRule(s)
+ *          clearAppRules() ; lastFocusedAppId() -> s
  * Signals: vibranceChanged(d) ; enabledChanged(b) ; rgbGainsChanged(d, d, d)
- *          primaryOnlyChanged(b)
+ *          primaryOnlyChanged(b) ; appRulesChanged(as)
  */
 class WayVibranceAdaptor : public QDBusAbstractAdaptor
 {
@@ -207,12 +268,18 @@ public Q_SLOTS:
     qreal greenGain() const;
     qreal blueGain() const;
     void setRGBGains(qreal red, qreal green, qreal blue);
+    QStringList appRules() const;
+    void setAppRule(const QString &prefixedPattern, qreal vibrance);
+    void removeAppRule(const QString &prefixedPattern);
+    void clearAppRules();
+    QString lastFocusedAppId() const;
 
 Q_SIGNALS:
     void vibranceChanged(qreal value);
     void enabledChanged(bool enabled);
     void rgbGainsChanged(qreal red, qreal green, qreal blue);
     void primaryOnlyChanged(bool primaryOnly);
+    void appRulesChanged(const QStringList &rules);
 
 private:
     VibranceEffect *m_effect;

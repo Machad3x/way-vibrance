@@ -10,11 +10,14 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusServiceWatcher>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
 #include <QGroupBox>
@@ -22,10 +25,13 @@
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QMainWindow>
 #include <QMenu>
 #include <QPushButton>
 #include <QSlider>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QSystemTrayIcon>
 #include <QTimer>
@@ -172,6 +178,13 @@ public:
         if (red.isValid() && green.isValid() && blue.isValid()) {
             onRGBGainsChanged(red.value(), green.value(), blue.value());
         }
+        // Per-app profiles: an effect older than this feature answers
+        // UnknownMethod — hide the UI instead of pretending the rules apply.
+        const QDBusReply<QStringList> rules = m_interface->call(QStringLiteral("appRules"));
+        setProfilesSupported(rules.isValid());
+        if (rules.isValid()) {
+            onAppRulesChanged(rules.value());
+        }
     }
 
     void requestRGBGains(double red, double green, double blue)
@@ -182,6 +195,33 @@ public:
         m_rgbPending = true;
         m_rgbTimer.start();
     }
+
+    /** Creates or updates a per-app profile; the effect echoes the full list. */
+    void requestSetAppRule(const QString &prefixedPattern, double vibrance)
+    {
+        if (m_interface) {
+            m_interface->asyncCall(QStringLiteral("setAppRule"), prefixedPattern, vibrance);
+        }
+    }
+
+    void requestRemoveAppRule(const QString &prefixedPattern)
+    {
+        if (m_interface) {
+            m_interface->asyncCall(QStringLiteral("removeAppRule"), prefixedPattern);
+        }
+    }
+
+    /** Resource class (Wayland app_id / X11 WM_CLASS) of the last focused app. */
+    QString fetchLastFocusedAppId()
+    {
+        if (!m_interface) {
+            return QString();
+        }
+        const QDBusReply<QString> reply = m_interface->call(QStringLiteral("lastFocusedAppId"));
+        return reply.isValid() ? reply.value() : QString();
+    }
+
+    bool profilesSupported() const { return m_profilesSupported; }
 
     /**
      * (Re)registers the toggle hotkey with KGlobalAccel and persists the
@@ -255,11 +295,19 @@ Q_SIGNALS:
     void enabledFromEffect(bool enabled);
     void rgbGainsFromEffect(double red, double green, double blue);
     void primaryOnlyFromEffect(bool primaryOnly);
+    void appRulesFromEffect(const QStringList &rules);
+    /** False while talking to an effect build that has no per-app profiles. */
+    void profilesSupportChanged(bool supported);
 
 private Q_SLOTS:
     void onVibranceChanged(double value)
     {
         Q_EMIT vibranceFromEffect(value);
+    }
+
+    void onAppRulesChanged(const QStringList &rules)
+    {
+        Q_EMIT appRulesFromEffect(rules);
     }
 
     void onEnabledChanged(bool enabled)
@@ -293,6 +341,15 @@ private Q_SLOTS:
     }
 
 private:
+    void setProfilesSupported(bool supported)
+    {
+        if (supported == m_profilesSupported) {
+            return;
+        }
+        m_profilesSupported = supported;
+        Q_EMIT profilesSupportChanged(supported);
+    }
+
     void flushRGB()
     {
         if (!m_interface || !m_rgbPending) {
@@ -351,6 +408,12 @@ private:
                     QStringLiteral("primaryOnlyChanged(bool)"),
                     this,
                     SLOT(onPrimaryOnlyChanged(bool)));
+        bus.connect(QString::fromLatin1(s_vibranceService),
+                    QString::fromLatin1(s_vibrancePath),
+                    QString::fromLatin1(s_vibranceInterface),
+                    QStringLiteral("appRulesChanged(QStringList)"),
+                    this,
+                    SLOT(onAppRulesChanged(QStringList)));
 
         refreshState();
         Q_EMIT availableChanged(true);
@@ -386,9 +449,16 @@ private:
                        QStringLiteral("primaryOnlyChanged(bool)"),
                        this,
                        SLOT(onPrimaryOnlyChanged(bool)));
+        bus.disconnect(QString::fromLatin1(s_vibranceService),
+                       QString::fromLatin1(s_vibrancePath),
+                       QString::fromLatin1(s_vibranceInterface),
+                       QStringLiteral("appRulesChanged(QStringList)"),
+                       this,
+                       SLOT(onAppRulesChanged(QStringList)));
         delete m_interface;
         m_interface = nullptr;
         m_lastSent = -1.0;
+        setProfilesSupported(false);
         Q_EMIT availableChanged(false);
     }
 
@@ -419,6 +489,7 @@ private:
     QKeySequence m_toggleShortcut;
     bool m_shortcutsReady = false;
     bool m_externalsTrusted = false;
+    bool m_profilesSupported = false;
     QDBusServiceWatcher m_watcher;
 };
 
@@ -427,6 +498,103 @@ static bool autostartEnabled();
 static void setAutostartEnabled(bool enabled);
 static bool storedStartHidden();
 static void saveStartHidden(bool hidden);
+
+/**
+ * Splits a serialized profile ("app:firefox|1.25" / "title:Warcraft|1.5")
+ * into the prefixed pattern (as setAppRule expects) and the percent value.
+ */
+static bool parseProfileEntry(const QString &entry, QString &prefixedPattern, int &percentOut)
+{
+    const int sep = entry.lastIndexOf(QLatin1Char('|'));
+    if (sep <= 0) {
+        return false;
+    }
+    bool ok = false;
+    const qreal vibrance = entry.mid(sep + 1).toDouble(&ok);
+    if (!ok) {
+        return false;
+    }
+    prefixedPattern = entry.left(sep);
+    percentOut = qBound(0, static_cast<int>(qRound(vibrance * 100.0)), 200);
+    return true;
+}
+
+/**
+ * Add/edit dialog for a per-app profile: match kind, glob pattern and the
+ * vibrance that matching windows should use instead of the global value.
+ */
+class ProfileDialog : public QDialog
+{
+public:
+    explicit ProfileDialog(QWidget *parent = nullptr)
+        : QDialog(parent)
+    {
+        setWindowTitle(tr("Per-app profile"));
+        auto *layout = new QVBoxLayout(this);
+
+        auto *matchRow = new QHBoxLayout();
+        m_kind = new QComboBox(this);
+        m_kind->addItem(tr("App ID / class"));
+        m_kind->addItem(tr("Window title"));
+        m_pattern = new QLineEdit(this);
+        m_pattern->setPlaceholderText(QStringLiteral("firefox, *steam*, org.kde.dolphin…"));
+        matchRow->addWidget(m_kind);
+        matchRow->addWidget(m_pattern, 1);
+        layout->addLayout(matchRow);
+
+        auto *valueRow = new QHBoxLayout();
+        valueRow->addWidget(new QLabel(tr("Vibrance"), this));
+        m_percent = new QSpinBox(this);
+        m_percent->setRange(kMinPercent, kMaxPercent);
+        m_percent->setValue(125);
+        m_percent->setSuffix(QStringLiteral("%"));
+        valueRow->addWidget(m_percent, 1);
+        layout->addLayout(valueRow);
+
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        m_okButton = buttons->button(QDialogButtonBox::Ok);
+        layout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        connect(m_pattern, &QLineEdit::textChanged, this, [this] { validate(); });
+        connect(m_kind, &QComboBox::currentIndexChanged, this, [this] { validate(); });
+
+        resize(380, 120);
+        validate();
+    }
+
+    void setFields(bool titleKind, const QString &pattern, int percent)
+    {
+        m_kind->setCurrentIndex(titleKind ? 1 : 0);
+        m_pattern->setText(pattern);
+        m_percent->setValue(percent);
+        validate();
+    }
+
+    /** The pattern with its kind prefix, as the effect's setAppRule takes it. */
+    QString prefixedPattern() const
+    {
+        const QString body = m_pattern->text().trimmed();
+        return (m_kind->currentIndex() == 1 ? QStringLiteral("title:") : QStringLiteral("app:")) + body;
+    }
+
+    double ruleVibrance() const { return m_percent->value() / 100.0; }
+
+private:
+    void validate()
+    {
+        const QString body = m_pattern->text().trimmed();
+        // '|' is our serialization separator — patterns containing it would
+        // round-trip wrongly, so they are not accepted (the effect rejects
+        // them too).
+        m_okButton->setEnabled(!body.isEmpty() && !body.contains(QLatin1Char('|')));
+    }
+
+    QComboBox *m_kind = nullptr;
+    QLineEdit *m_pattern = nullptr;
+    QSpinBox *m_percent = nullptr;
+    QPushButton *m_okButton = nullptr;
+};
 
 class TrayWindow : public QMainWindow
 {
@@ -518,6 +686,95 @@ public:
         }
         presets->addStretch();
         outerLayout->addLayout(presets);
+
+        // Per-app profiles (the counterpart of vibrance-gui's per-game
+        // settings): matching windows override the global vibrance value.
+        m_profileGroup = new QGroupBox(tr("Per-app profiles"), central);
+        auto *profileLayout = new QVBoxLayout(m_profileGroup);
+        m_profileList = new QListWidget(m_profileGroup);
+        m_profileList->setMaximumHeight(110);
+        m_profileList->setToolTip(tr("Double-click a profile to edit it."));
+        profileLayout->addWidget(m_profileList);
+        auto *profileButtons = new QHBoxLayout();
+        auto *addFocusedButton = new QPushButton(tr("From last focused…"), m_profileGroup);
+        addFocusedButton->setToolTip(tr("Pre-fill the app ID of the window you focused before this one."));
+        auto *addButton = new QPushButton(tr("Add…"), m_profileGroup);
+        auto *removeButton = new QPushButton(tr("Remove"), m_profileGroup);
+        profileButtons->addWidget(addFocusedButton);
+        profileButtons->addWidget(addButton);
+        profileButtons->addWidget(removeButton);
+        profileButtons->addStretch();
+        profileLayout->addLayout(profileButtons);
+        auto *profileHint = new QLabel(tr("Windows whose app ID (Wayland app_id / X11 WM_CLASS) or title matches a profile are composited with its vibrance; '*' and '?' are wildcards. Profiles need no extra GPU cost."), m_profileGroup);
+        profileHint->setWordWrap(true);
+        profileLayout->addWidget(profileHint);
+        outerLayout->addWidget(m_profileGroup);
+
+        connect(addButton, &QPushButton::clicked, this, [controller, this] {
+            ProfileDialog dialog(this);
+            if (dialog.exec() == QDialog::Accepted) {
+                controller->requestSetAppRule(dialog.prefixedPattern(), dialog.ruleVibrance());
+            }
+        });
+        connect(addFocusedButton, &QPushButton::clicked, this, [controller, this] {
+            const QString id = controller->fetchLastFocusedAppId();
+            ProfileDialog dialog(this);
+            if (!id.isEmpty()) {
+                dialog.setFields(false, id, 125);
+            }
+            if (dialog.exec() == QDialog::Accepted) {
+                controller->requestSetAppRule(dialog.prefixedPattern(), dialog.ruleVibrance());
+            }
+        });
+        auto selectedPattern = [this]() -> QString {
+            const int row = m_profileList->currentRow();
+            if (row < 0 || row >= m_profileEntries.size()) {
+                return QString();
+            }
+            QString pattern;
+            int percent = 100;
+            if (!parseProfileEntry(m_profileEntries.at(row), pattern, percent)) {
+                return QString();
+            }
+            return pattern;
+        };
+        connect(removeButton, &QPushButton::clicked, this, [controller, selectedPattern, this] {
+            const QString pattern = selectedPattern();
+            if (!pattern.isEmpty()) {
+                controller->requestRemoveAppRule(pattern);
+            }
+        });
+        connect(m_profileList, &QListWidget::itemDoubleClicked, this, [controller, this](QListWidgetItem *item) {
+            const int row = m_profileList->row(item);
+            if (row < 0 || row >= m_profileEntries.size()) {
+                return;
+            }
+            QString oldPattern;
+            int percent = 100;
+            if (!parseProfileEntry(m_profileEntries.at(row), oldPattern, percent)) {
+                return;
+            }
+            const bool titleKind = oldPattern.startsWith(QLatin1String("title:"));
+            ProfileDialog dialog(this);
+            dialog.setFields(titleKind, oldPattern.mid(titleKind ? 6 : 4), percent);
+            if (dialog.exec() != QDialog::Accepted) {
+                return;
+            }
+            // The pattern is the identity: renaming means remove + add.
+            if (dialog.prefixedPattern().compare(oldPattern, Qt::CaseInsensitive) != 0) {
+                controller->requestRemoveAppRule(oldPattern);
+            }
+            controller->requestSetAppRule(dialog.prefixedPattern(), dialog.ruleVibrance());
+        });
+        connect(controller, &VibranceController::appRulesFromEffect, this, [this](const QStringList &entries) {
+            rebuildProfileList(entries);
+        });
+        // Profiles only exist on the newer effect build; an older one answers
+        // UnknownMethod and we hide the group instead of faking success.
+        connect(controller, &VibranceController::profilesSupportChanged, this, [this](bool supported) {
+            m_profileGroup->setVisible(supported);
+        });
+        m_profileGroup->setVisible(controller->profilesSupported());
 
         // Configurable global hotkey (KGlobalAccel: persisted by the KDE
         // daemon, editable here and in System Settings → Shortcuts).
@@ -624,7 +881,7 @@ public:
         });
 
         setCentralWidget(central);
-        resize(420, 460);
+        resize(420, 640);
 
         connect(m_slider, &QSlider::valueChanged, this, [controller, this](int percent) {
             updateValueLabel(percent);
@@ -701,11 +958,28 @@ private:
         m_valueLabel->setText(QStringLiteral("%1%").arg(percent));
     }
 
+    void rebuildProfileList(const QStringList &entries)
+    {
+        m_profileEntries = entries;
+        m_profileList->clear();
+        for (const QString &entry : entries) {
+            QString pattern;
+            int percent = 100;
+            if (!parseProfileEntry(entry, pattern, percent)) {
+                continue;
+            }
+            m_profileList->addItem(QStringLiteral("%1 — %2%").arg(pattern).arg(percent));
+        }
+    }
+
     VibranceController *m_controller = nullptr;
     QSlider *m_slider = nullptr;
     QSlider *m_redSlider = nullptr;
     QSlider *m_greenSlider = nullptr;
     QSlider *m_blueSlider = nullptr;
+    QGroupBox *m_profileGroup = nullptr;
+    QListWidget *m_profileList = nullptr;
+    QStringList m_profileEntries;
 
 public:
     void setAutostartChecked(bool on)

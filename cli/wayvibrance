@@ -10,6 +10,11 @@
 #   wayvibrance on | off           # enable/disable (keeps the value)
 #   wayvibrance toggle             # flip between on and off
 #   wayvibrance load               # make sure the effect is loaded in KWin
+#   wayvibrance app list                       # per-app profiles
+#   wayvibrance app set <padrão> <valor>       # ex.: app set firefox 1.5
+#   wayvibrance app del <padrão>               # (prefixo 'title:' casa o título)
+#   wayvibrance app reset                      # apaga todos os perfis
+#   wayvibrance app focused                    # app_id da última janela focada
 
 set -euo pipefail
 
@@ -88,6 +93,33 @@ case "$cmd" in
     getrgb)
         ensure_loaded
         printf 'R=%s G=%s B=%s\n' "$(call redGain)" "$(call greenGain)" "$(call blueGain)"
+        ;;
+    app)
+        ensure_loaded
+        case "${2:-list}" in
+            list)
+                # cada linha vem como "app:firefox|1.5" — imprime legível
+                call appRules | sed -e 's/^/  /' | tr -d '\r' || true
+                ;;
+            set)
+                [ $# -ge 4 ] || { echo "uso: wayvibrance app set <padrão> <valor>  (glob, prefixo 'title:' opcional)" >&2; exit 1; }
+                call setAppRule "$3" "$4"
+                ;;
+            del)
+                [ $# -ge 3 ] || { echo "uso: wayvibrance app del <padrão>" >&2; exit 1; }
+                call removeAppRule "$3"
+                ;;
+            reset)
+                call clearAppRules
+                ;;
+            focused)
+                call lastFocusedAppId
+                ;;
+            *)
+                echo "uso: wayvibrance app {list|set <padrão> <valor>|del <padrão>|reset|focused}" >&2
+                exit 1
+                ;;
+        esac
         ;;
     *)
         # positional: a numeric value, e.g. `wayvibrance 1.25`
