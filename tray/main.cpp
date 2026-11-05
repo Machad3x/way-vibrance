@@ -32,9 +32,11 @@
 #include <QVBoxLayout>
 
 #include <KAboutData>
+#include <KConfigGroup>
 #include <KDBusService>
 #include <KGlobalAccel>
 #include <KGlobalShortcutInfo>
+#include <KSharedConfig>
 
 static constexpr auto s_effectId = "wayvibrance";
 static constexpr auto s_vibranceService = "org.wayvibrance";
@@ -143,18 +145,39 @@ public:
     }
 
     /**
-     * (Re)registers the toggle hotkey with KGlobalAccel. An empty sequence
-     * removes the binding. Persisted by the KDE global-shortcut daemon, so
-     * the choice survives reboots and also appears (editable) in
-     * System Settings → Shortcuts.
+     * (Re)registers the toggle hotkey with KGlobalAccel and persists the
+     * choice in our own config (wayvibrancerc). Reading the sequence back
+     * from the daemon at startup is unreliable for the application's own
+     * component, so we keep the source of truth locally and re-register
+     * every session. An empty sequence unbinds the hotkey.
      */
     bool registerToggleShortcut(const QKeySequence &sequence)
     {
         m_toggleShortcut = sequence;
-        return KGlobalAccel::self()->setGlobalShortcut(m_toggleAction, sequence);
+        const bool ok = sequence.isEmpty()
+            ? KGlobalAccel::self()->setGlobalShortcut(m_toggleAction, QList<QKeySequence>())
+            : KGlobalAccel::self()->setGlobalShortcut(m_toggleAction, sequence);
+        saveToggleShortcut(sequence);
+        return ok;
     }
 
     QKeySequence toggleShortcut() const { return m_toggleShortcut; }
+
+    /** Our own, reliable persistence for the captured hotkey. */
+    static QKeySequence storedToggleShortcut()
+    {
+        auto config = KSharedConfig::openConfig(QStringLiteral("wayvibrancerc"));
+        const KConfigGroup group(config, QStringLiteral("Shortcuts"));
+        return QKeySequence(group.readEntry("ToggleShortcut", QString()));
+    }
+
+    static void saveToggleShortcut(const QKeySequence &sequence)
+    {
+        auto config = KSharedConfig::openConfig(QStringLiteral("wayvibrancerc"));
+        KConfigGroup group(config, QStringLiteral("Shortcuts"));
+        group.writeEntry("ToggleShortcut", sequence.toString());
+        config->sync();
+    }
 
 Q_SIGNALS:
     void availableChanged(bool available);
@@ -434,7 +457,7 @@ public:
 
         auto updateConflictLabel = [this](const QKeySequence &seq) {
             if (seq.isEmpty()) {
-                m_shortcutInfo->setText(tr("No shortcut bound."));
+                m_shortcutInfo->setText(tr("No hotkey set — click the field and press a key combination."));
                 return;
             }
             const QString own = KAboutData::applicationData().componentName();
@@ -454,14 +477,15 @@ public:
         updateConflictLabel(m_shortcutEdit->keySequence());
 
         connect(m_shortcutEdit, &QKeySequenceEdit::keySequenceChanged, this,
-                [updateConflictLabel](const QKeySequence &seq) {
+                [this, controller, updateConflictLabel](const QKeySequence &seq) {
                     updateConflictLabel(seq);
+                    if (m_updatingShortcut) {
+                        return;
+                    }
+                    // Apply and persist right after the capture — no need
+                    // to press Enter or leave the field.
+                    controller->registerToggleShortcut(seq);
                 });
-        connect(m_shortcutEdit, &QKeySequenceEdit::editingFinished, this, [controller, this, updateConflictLabel] {
-            const QKeySequence seq = m_shortcutEdit->keySequence();
-            controller->registerToggleShortcut(seq);
-            updateConflictLabel(seq);
-        });
         connect(clearButton, &QPushButton::clicked, this, [controller, this, updateConflictLabel] {
             m_shortcutEdit->clear();
             controller->registerToggleShortcut(QKeySequence());
@@ -477,6 +501,9 @@ public:
                     m_updatingShortcut = true;
                     m_shortcutEdit->setKeySequence(seq);
                     m_updatingShortcut = false;
+                    // External change (e.g. System Settings): mirror it into
+                    // our own persistence without re-announcing to the daemon.
+                    VibranceController::saveToggleShortcut(seq);
                 });
 
         m_loadButton = new QPushButton(tr("Load effect into KWin"), central);
@@ -625,12 +652,11 @@ int main(int argc, char *argv[])
 
     VibranceController controller;
 
-    // Restore or install the global toggle shortcut (default Meta+V).
-    const QList<QKeySequence> saved =
-        KGlobalAccel::self()->globalShortcut(KAboutData::applicationData().componentName(),
-                                             QLatin1String(s_toggleActionId));
-    const QKeySequence sequence = saved.isEmpty() ? QKeySequence(Qt::META | Qt::Key_V) : saved.first();
-    controller.registerToggleShortcut(sequence);
+    // Start with NO default binding (combinations like Meta+V belong to
+    // Plasma itself). Restore the user's captured hotkey from our own
+    // config; when there is none, register an empty sequence so stale
+    // bindings from older versions are purged from the KGlobalAccel daemon.
+    controller.registerToggleShortcut(VibranceController::storedToggleShortcut());
 
     TrayWindow window(&controller);
 

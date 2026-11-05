@@ -78,10 +78,13 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 - Bandeja/menu: slider 0–250%, **3 sliders de ganho por canal (R/G/B,
   0–200%) com botão "Reset RGB"**, presets (100/125/150/200%), toggle,
   "Start with Plasma".
-- **Hotkey global**: tecla configurável na janela do tray (padrão **Meta+V**,
-  com detector de conflito e botão "Clear"); também editável em
+- **Hotkey global**: sem atalho padrão (não brigamos com o Plasma). Clique no
+  campo *Global hotkey* da janela do tray e digite a combinação — aplicada e
+  persistida na hora (em `wayvibrancerc`, re-registrada no KGlobalAccel a cada
+  sessão), com detector de conflito e botão "Clear". Também editável em
   *Configurações do Sistema → Atalhos de Teclado → Atalhos da Aplicação →
-  wayvibrance-tray*. Requer o tray rodando — use "Start with Plasma".
+  wayvibrance-tray* (mudanças feitas lá são absorvidas pelo tray). Requer o
+  tray rodando — use "Start with Plasma".
 - CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
   `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` · `wayvibrance getrgb`
 - Reset rápido: vibrância `1.0` e canais `1.0` = neutro (efeito fica

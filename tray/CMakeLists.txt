@@ -15,6 +15,7 @@ target_link_libraries(wayvibrance-tray
         KF6::CoreAddons
         KF6::DBusAddons
         KF6::GlobalAccel
+        KF6::ConfigCore
 )
 
 install(TARGETS wayvibrance-tray DESTINATION ${KDE_INSTALL_BINDIR})
