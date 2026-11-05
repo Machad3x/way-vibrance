@@ -9,3 +9,4 @@ Exec=wayvibrance-tray
 Icon=preferences-desktop-color
 Terminal=false
 Categories=Qt;KDE;Settings;
+StartupWMClass=org.kde.wayvibrance-tray

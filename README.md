@@ -83,7 +83,7 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
   persistida na hora (em `wayvibrancerc`, re-registrada no KGlobalAccel a cada
   sessão), com detector de conflito e botão "Clear". Também editável em
   *Configurações do Sistema → Atalhos de Teclado → Atalhos da Aplicação →
-  wayvibrance-tray* (mudanças feitas lá são absorvidas pelo tray). Requer o
+  Way Vibrance* (mudanças feitas lá são absorvidas pelo tray). Requer o
   tray rodando — use "Start with Plasma".
 - CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
   `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` · `wayvibrance getrgb`

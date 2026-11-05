@@ -20,4 +20,4 @@ target_link_libraries(wayvibrance-tray
 
 install(TARGETS wayvibrance-tray DESTINATION ${KDE_INSTALL_BINDIR})
 
-install(FILES wayvibrance.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+install(FILES org.kde.wayvibrance-tray.desktop DESTINATION ${KDE_INSTALL_APPDIR})

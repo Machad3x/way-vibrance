@@ -75,6 +75,9 @@ public:
         m_toggleAction->setObjectName(QString::fromLatin1(s_toggleActionId));
         connect(m_toggleAction, &QAction::triggered, this, &VibranceController::toggleVibrance);
 
+        // The file is the source of truth even before we talk to the daemon.
+        m_toggleShortcut = storedToggleShortcut();
+
         connect(&m_watcher, &QDBusServiceWatcher::serviceRegistered,
                 this, &VibranceController::onServiceRegistered);
         connect(&m_watcher, &QDBusServiceWatcher::serviceUnregistered,
@@ -146,36 +149,66 @@ public:
 
     /**
      * (Re)registers the toggle hotkey with KGlobalAccel and persists the
-     * choice in our own config (wayvibrancerc). Reading the sequence back
-     * from the daemon at startup is unreliable for the application's own
-     * component, so we keep the source of truth locally and re-register
-     * every session. An empty sequence unbinds the hotkey.
+     * choice in our own config (wayvibrancerc). The application's own
+     * component cannot be read back reliably from the daemon at startup
+     * (the daemon introspects us while we are still registering), so
+     * wayvibrancerc is the source of truth and we re-register every
+     * session. An empty sequence unbinds the hotkey — using
+     * removeAllShortcuts(), because setGlobalShortcut() with an empty
+     * list is a no-op.
      */
     bool registerToggleShortcut(const QKeySequence &sequence)
     {
         m_toggleShortcut = sequence;
-        const bool ok = sequence.isEmpty()
-            ? KGlobalAccel::self()->setGlobalShortcut(m_toggleAction, QList<QKeySequence>())
-            : KGlobalAccel::self()->setGlobalShortcut(m_toggleAction, sequence);
+        bool ok = true;
+        if (sequence.isEmpty()) {
+            KGlobalAccel::self()->removeAllShortcuts(m_toggleAction);
+        } else {
+            ok = KGlobalAccel::self()->setGlobalShortcut(m_toggleAction, sequence);
+        }
         saveToggleShortcut(sequence);
         return ok;
     }
 
     QKeySequence toggleShortcut() const { return m_toggleShortcut; }
+    bool shortcutsReady() const { return m_shortcutsReady; }
+    bool externalChangesAccepted() const { return m_externalsTrusted; }
+
+    /**
+     * Runs from the event loop shortly after startup: wipes any state the
+     * daemon kept for our action (older builds registered Meta+V and the
+     * daemon pushes that stale binding back to us as soon as we listen!)
+     * and re-applies exactly what wayvibrancerc says. External edits (e.g.
+     * System Settings) are only mirrored into our config after a short
+     * grace period, so the stale startup burst cannot poison the file.
+     */
+    void applyStartupShortcut()
+    {
+        KGlobalAccel::self()->removeAllShortcuts(m_toggleAction);
+        if (!m_toggleShortcut.isEmpty()) {
+            KGlobalAccel::self()->setGlobalShortcut(m_toggleAction, m_toggleShortcut);
+        }
+        m_shortcutsReady = true;
+        QTimer::singleShot(3000, this, [this] { m_externalsTrusted = true; });
+    }
 
     /** Our own, reliable persistence for the captured hotkey. */
     static QKeySequence storedToggleShortcut()
     {
         auto config = KSharedConfig::openConfig(QStringLiteral("wayvibrancerc"));
         const KConfigGroup group(config, QStringLiteral("Shortcuts"));
-        return QKeySequence(group.readEntry("ToggleShortcut", QString()));
+        // Key name bumped from "ToggleShortcut": the old key could hold a
+        // Meta+V value poisoned by the startup race fixed here.
+        return QKeySequence(group.readEntry("GlobalToggleShortcut", QString()));
     }
 
     static void saveToggleShortcut(const QKeySequence &sequence)
     {
         auto config = KSharedConfig::openConfig(QStringLiteral("wayvibrancerc"));
         KConfigGroup group(config, QStringLiteral("Shortcuts"));
-        group.writeEntry("ToggleShortcut", sequence.toString());
+        group.writeEntry("GlobalToggleShortcut", sequence.toString());
+        // Drop the poisoned legacy key if present.
+        group.deleteEntry("ToggleShortcut");
         config->sync();
     }
 
@@ -345,6 +378,8 @@ private:
     bool m_rgbPending = false;
     QAction *m_toggleAction = nullptr;
     QKeySequence m_toggleShortcut;
+    bool m_shortcutsReady = false;
+    bool m_externalsTrusted = false;
     bool m_enabledCache = true;
     QDBusServiceWatcher m_watcher;
 };
@@ -491,18 +526,21 @@ public:
             controller->registerToggleShortcut(QKeySequence());
             updateConflictLabel(QKeySequence());
         });
-        // Keep the picker in sync if the user edits the shortcut in
-        // System Settings while we run.
+        // Mirror genuine external edits (e.g. System Settings) — but ignore
+        // anything until the startup wipe/apply ran, and the stale push
+        // burst the daemon sends on registration (old builds saved Meta+V
+        // there). Otherwise that burst would poison our own config.
         connect(KGlobalAccel::self(), &KGlobalAccel::globalShortcutChanged, this,
                 [this, controller](QAction *action, const QKeySequence &seq) {
-                    if (action != controller->toggleAction()) {
+                    if (action != controller->toggleAction() || !controller->shortcutsReady()) {
                         return;
+                    }
+                    if (seq != controller->toggleShortcut() && !controller->externalChangesAccepted()) {
+                        return; // stale daemon state racing our startup apply
                     }
                     m_updatingShortcut = true;
                     m_shortcutEdit->setKeySequence(seq);
                     m_updatingShortcut = false;
-                    // External change (e.g. System Settings): mirror it into
-                    // our own persistence without re-announcing to the daemon.
                     VibranceController::saveToggleShortcut(seq);
                 });
 
@@ -606,11 +644,21 @@ private:
 static QString autostartFilePath()
 {
     return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation))
+        .filePath(QStringLiteral("autostart/org.kde.wayvibrance-tray.desktop"));
+}
+
+static QString legacyAutostartFilePath()
+{
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation))
         .filePath(QStringLiteral("autostart/wayvibrance.desktop"));
 }
 
 static bool autostartEnabled()
 {
+    // Migrate the entry from the old file name on the fly.
+    if (!QFile::exists(autostartFilePath()) && QFile::exists(legacyAutostartFilePath())) {
+        QFile::rename(legacyAutostartFilePath(), autostartFilePath());
+    }
     return QFile::exists(autostartFilePath());
 }
 
@@ -634,16 +682,19 @@ static void setAutostartEnabled(bool enabled)
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("wayvibrance-tray"));
+    // One consistent identity everywhere (D-Bus service, Wayland app_id,
+    // portal lookup, KGlobalAccel component): org.kde.wayvibrance-tray.
+    QApplication::setApplicationName(QStringLiteral("org.kde.wayvibrance-tray"));
     QApplication::setOrganizationName(QStringLiteral("wayvibrance"));
     QApplication::setApplicationDisplayName(QStringLiteral("Way Vibrance"));
     QApplication::setQuitOnLastWindowClosed(false);
 
-    KAboutData about(QStringLiteral("wayvibrance-tray"),
+    KAboutData about(QStringLiteral("org.kde.wayvibrance-tray"),
                      QStringLiteral("Way Vibrance"),
                      QStringLiteral("0.2.0"),
                      QObject::tr("System-wide vibrance and per-channel RGB control for KDE Plasma on Wayland"),
                      KAboutLicense::GPL);
+    about.setDesktopFileName(QStringLiteral("org.kde.wayvibrance-tray"));
     KAboutData::setApplicationData(about);
 
     // Single instance + D-Bus registration under the component name, which
@@ -652,11 +703,11 @@ int main(int argc, char *argv[])
 
     VibranceController controller;
 
-    // Start with NO default binding (combinations like Meta+V belong to
-    // Plasma itself). Restore the user's captured hotkey from our own
-    // config; when there is none, register an empty sequence so stale
-    // bindings from older versions are purged from the KGlobalAccel daemon.
-    controller.registerToggleShortcut(VibranceController::storedToggleShortcut());
+    // Our config (loaded by the controller constructor) is the source of
+    // truth. Wipe any stale daemon state for our action and (re)apply it
+    // once the event loop is running — before that, the Component D-Bus
+    // adaptor is not served yet and the daemon answers nothing useful.
+    QTimer::singleShot(0, &controller, &VibranceController::applyStartupShortcut);
 
     TrayWindow window(&controller);
 
