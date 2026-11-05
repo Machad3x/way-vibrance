@@ -82,9 +82,10 @@ Menu da bandeja do sistema:
 
 - **KDE Plasma 6** (KWin 6.0 ou mais novo) em sessão **Wayland**, composição
   OpenGL. Testado em KWin 6.8 (CachyOS/Arch).
-- Para compilar (Arch/CachyOS): `scripts/build.sh` instala tudo
-  (`base-devel cmake extra-cmake-modules kwin qt6-base kconfig kcoreaddons
-  kdbusaddons kglobalaccel vulkan-headers`).
+- Para compilar (Arch/CachyOS): `scripts/build.sh` instala só o que falta
+  (`cmake extra-cmake-modules kwin qt6-base qt6-tools kconfig kcoreaddons
+  kdbusaddons kglobalaccel vulkan-headers libdrm wayland`, mais `base-devel`
+  se não houver `make`) — ele nunca atualiza o sistema.
 
 ## Instalação
 

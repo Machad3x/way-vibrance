@@ -80,9 +80,10 @@ System tray menu:
 
 - **KDE Plasma 6** (KWin 6.0 or newer) on a **Wayland** session, OpenGL
   compositing. Tested on KWin 6.8 (CachyOS/Arch).
-- To build (Arch/CachyOS): `scripts/build.sh` installs everything
-  (`base-devel cmake extra-cmake-modules kwin qt6-base kconfig kcoreaddons
-  kdbusaddons kglobalaccel vulkan-headers`).
+- To build (Arch/CachyOS): `scripts/build.sh` installs only what is missing
+  (`cmake extra-cmake-modules kwin qt6-base qt6-tools kconfig kcoreaddons
+  kdbusaddons kglobalaccel vulkan-headers libdrm wayland`, plus `base-devel`
+  if no `make` is found) — it never updates your system.
 
 ## Installation
 
