@@ -16,7 +16,6 @@
 
 #include <QDebug>
 #include <QDBusConnection>
-#include <QSet>
 #include <QTimer>
 #include <QUrl>
 
@@ -48,7 +47,6 @@ VibranceEffect::VibranceEffect()
 
     reloadConfig();
 
-    connect(effects, &EffectsHandler::windowAdded, this, &VibranceEffect::onWindowAdded);
     connect(effects, &EffectsHandler::windowDeleted, this, &VibranceEffect::onWindowDeleted);
     connect(effects, &EffectsHandler::windowActivated, this, &VibranceEffect::onWindowActivated);
 
@@ -112,14 +110,58 @@ auto VibranceEffect::drawWindow(const RenderTarget &renderTarget,
                                 WindowPaintData &data)
     -> decltype(effects->drawWindow(renderTarget, viewport, w, mask, region, data))
 {
-    if (windowInScope(w)) {
-        data.multiplySaturation(vibranceForWindow(w));
+    resolveWindow(w);
+    WindowMatch &entry = m_windowMatch[w]; // filled by resolveWindow()
+    const bool inScope = windowInScope(w);
+
+    // Deferred global-uniform upload: this is the one place where the GL
+    // context is guaranteed current (values changed via D-Bus/config are
+    // only marked dirty there — compiling shaders or setting uniforms
+    // from a D-Bus callback races the compositor's context and silently
+    // no-ops, which used to make profiles "stop responding").
+    if (m_uniformsDirty && m_shader) {
+        ShaderBinder binder{m_shader.get()};
+        m_shader->setUniform("rgbGain", m_rgbGains);
+        m_uniformsDirty = false;
+    }
+
+    qreal vib = m_vibrance;
+    QVector3D gains = m_rgbGains;
+    if (inScope && entry.ruleIndex >= 0) {
+        const AppRule &rule = m_rules.at(entry.ruleIndex);
+        vib = rule.vibrance;
+        if (rule.hasGains()) {
+            gains = rule.gains;
+        }
+    }
+
+    if (inScope) {
+        data.multiplySaturation(vib);
+        GLShader *desired = nullptr;
+        if (!qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f))) {
+            desired = shaderForGains(gains); // generates on demand, in-context
+        }
+        if (desired != entry.appliedShader) {
+            if (desired) {
+                redirect(w);
+                setShader(w, desired);
+                entry.appliedShader = desired;
+            } else {
+                unredirect(w);
+                entry.appliedShader = nullptr;
+            }
+        }
         // Windows not redirected (RGB gains neutral) are forwarded straight
         // to effects->drawWindow() by the base class — no grab, no extra pass.
         return OffscreenEffect::drawWindow(renderTarget, viewport, w, mask, region, data);
     }
+
     // "Only primary monitor" mode and this window is elsewhere: bypass both
     // the uniform and the offscreen pass, drawing it completely untouched.
+    if (entry.appliedShader) {
+        unredirect(w);
+        entry.appliedShader = nullptr;
+    }
     return effects->drawWindow(renderTarget, viewport, w, mask, region, data);
 }
 
@@ -307,8 +349,9 @@ void VibranceEffect::rebuildMatchers()
 
 void VibranceEffect::invalidateMatchCache()
 {
+    // Bump only: entries keep their appliedShader bookkeeping, which
+    // drawWindow diffs against the (re-resolved) desired state.
     ++m_matchStamp;
-    m_windowMatch.clear();
 }
 
 void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
@@ -371,7 +414,6 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
     rebuildMatchers();
     invalidateMatchCache();
     updateRedirects();
-    pruneShaderPool();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
     effects->addRepaintFull();
@@ -434,7 +476,6 @@ void VibranceEffect::removeAppRule(const QString &prefixedPattern)
     }
     invalidateMatchCache();
     updateRedirects();
-    pruneShaderPool();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
     effects->addRepaintFull();
@@ -448,7 +489,6 @@ void VibranceEffect::clearAppRules()
     m_rules.clear();
     invalidateMatchCache();
     updateRedirects();
-    pruneShaderPool();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
     effects->addRepaintFull();
@@ -469,23 +509,28 @@ QString VibranceEffect::lastFocusedAppId() const
     return m_lastFocusedAppId;
 }
 
-qreal VibranceEffect::vibranceForWindow(EffectWindow *w)
+/**
+ * Refreshes the cached per-window rule resolution (first match wins). Cheap:
+ * recomputes only when the window's identity strings changed or the rule set
+ * was touched (stamp). appliedShader survives — drawWindow diffs it.
+ */
+void VibranceEffect::resolveWindow(EffectWindow *w)
 {
-    if (m_rules.isEmpty()) {
-        return m_vibrance;
-    }
     WindowMatch &entry = m_windowMatch[w];
     const QString idClass = w->window() ? w->window()->resourceClass() : QString();
     const QString idName = w->window() ? w->window()->resourceName() : QString();
     const QString caption = w->caption();
     if (entry.stamp == m_matchStamp && entry.idA == idClass && entry.idB == idName && entry.caption == caption) {
-        return entry.ruleIndex >= 0 ? m_rules[entry.ruleIndex].vibrance : m_vibrance;
+        return;
     }
     entry.stamp = m_matchStamp;
     entry.idA = idClass;
     entry.idB = idName;
     entry.caption = caption;
     entry.ruleIndex = -1;
+    if (m_rules.isEmpty()) {
+        return;
+    }
     for (int i = 0; i < m_rules.size(); ++i) {
         const AppRule &rule = m_rules.at(i);
         if (!rule.matcher.isValid()) {
@@ -502,23 +547,6 @@ qreal VibranceEffect::vibranceForWindow(EffectWindow *w)
             break;
         }
     }
-    return entry.ruleIndex >= 0 ? m_rules[entry.ruleIndex].vibrance : m_vibrance;
-}
-
-QVector3D VibranceEffect::gainsForWindow(EffectWindow *w)
-{
-    // Reuse the match entry filled by vibranceForWindow (drawWindow calls
-    // them back to back, so this is a cache hit in practice).
-    vibranceForWindow(w);
-    if (m_rules.isEmpty()) {
-        return m_rgbGains;
-    }
-    const auto it = m_windowMatch.constFind(w);
-    if (it == m_windowMatch.constEnd() || it->ruleIndex < 0) {
-        return m_rgbGains;
-    }
-    const AppRule &rule = m_rules.at(it->ruleIndex);
-    return rule.hasGains() ? rule.gains : m_rgbGains;
 }
 
 void VibranceEffect::onWindowDeleted(EffectWindow *w)
@@ -572,10 +600,8 @@ bool VibranceEffect::ensureShader()
 
 void VibranceEffect::updateShaderUniforms()
 {
-    if (m_shader) {
-        ShaderBinder binder{m_shader.get()};
-        m_shader->setUniform("rgbGain", m_rgbGains);
-    }
+    // Applied lazily in drawWindow, where the GL context is current.
+    m_uniformsDirty = true;
 }
 
 QString VibranceEffect::gainsKey(const QVector3D &gains)
@@ -619,64 +645,26 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
     return raw;
 }
 
-void VibranceEffect::pruneShaderPool()
+void VibranceEffect::unredirectAllApplied()
 {
-    // Free instances no effective window-gain set uses any more. Callers
-    // refresh the per-window shaders first, so no window can still point
-    // at a shader we drop here.
-    QSet<QString> inUse;
-    if (m_enabled && rgbGainsActive()) {
-        inUse.insert(gainsKey(m_rgbGains)); // handled by m_shader, but the key is reserved
-    }
-    for (const AppRule &rule : m_rules) {
-        if (m_enabled && rule.hasGains()) {
-            inUse.insert(gainsKey(rule.gains));
+    for (auto it = m_windowMatch.begin(); it != m_windowMatch.end(); ++it) {
+        if (it->appliedShader) {
+            unredirect(it.key());
+            it->appliedShader = nullptr;
         }
-    }
-    for (auto it = m_shaderPool.begin(); it != m_shaderPool.end();) {
-        if (!inUse.contains(it.key())) {
-            it = m_shaderPool.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-void VibranceEffect::applyWindowRedirect(EffectWindow *w)
-{
-    const QVector3D gains = gainsForWindow(w);
-    if (!m_enabled || qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f))) {
-        unredirect(w);
-        return;
-    }
-    if (GLShader *shader = shaderForGains(gains)) {
-        redirect(w);
-        setShader(w, shader);
-    } else {
-        unredirect(w);
     }
 }
 
 void VibranceEffect::updateRedirects()
 {
-    // Each window follows its own effective gain set (global or the first
-    // matching profile's).
-    bool anyRedirect = false;
-    const auto windows = effects->stackingOrder();
-    for (EffectWindow *w : windows) {
-        applyWindowRedirect(w);
-        const QVector3D gains = gainsForWindow(w);
-        if (m_enabled && !qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f))) {
-            anyRedirect = true;
-        }
+    // Redirects themselves are applied lazily inside drawWindow (the only
+    // guaranteed in-context place). Here we force a full frame so every
+    // visible window gets the chance to reconcile, and drop all grabs when
+    // the effect is disabled — inactive effects never see drawWindow().
+    if (!m_enabled) {
+        unredirectAllApplied();
     }
-    m_redirecting = anyRedirect;
     effects->addRepaintFull();
-}
-
-void VibranceEffect::onWindowAdded(EffectWindow *w)
-{
-    applyWindowRedirect(w);
 }
 
 void VibranceEffect::setVibrance(qreal value)
@@ -745,7 +733,6 @@ void VibranceEffect::setRGBGains(qreal red, qreal green, qreal blue)
     m_rgbGains = gains;
     updateShaderUniforms();
     updateRedirects();
-    pruneShaderPool();
     Q_EMIT rgbGainsChanged(m_rgbGains.x(), m_rgbGains.y(), m_rgbGains.z());
     m_persistTimer->start();
     effects->addRepaintFull();

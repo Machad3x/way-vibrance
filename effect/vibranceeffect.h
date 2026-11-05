@@ -192,7 +192,6 @@ Q_SIGNALS:
 
 private Q_SLOTS:
     void persist();
-    void onWindowAdded(KWin::EffectWindow *w);
     void onWindowDeleted(KWin::EffectWindow *w);
     void onWindowActivated(KWin::EffectWindow *w);
 
@@ -216,11 +215,14 @@ private:
         QString idA;
         QString idB;
         QString caption;
-        int ruleIndex = -1; // index into m_rules; -1 = use the global value
+        int ruleIndex = -1; // index into m_rules; -1 = use the global values
+        GLShader *appliedShader = nullptr; // offscreen shader we applied to
+                                           // this window (null: not redirected
+                                           // by us) — diffed against the
+                                           // desired state inside drawWindow
     };
 
-    qreal vibranceForWindow(EffectWindow *w);
-    QVector3D gainsForWindow(EffectWindow *w);
+    void resolveWindow(EffectWindow *w);
     void rebuildMatchers();
     void invalidateMatchCache();
     static QString serializedRule(const AppRule &rule);
@@ -234,21 +236,22 @@ private:
     bool ensureShader();
     void updateShaderUniforms();
     void updateRedirects();
-    void applyWindowRedirect(EffectWindow *w);
+    void unredirectAllApplied();
     GLShader *shaderForGains(const QVector3D &gains);
-    void pruneShaderPool();
     static QString gainsKey(const QVector3D &gains);
 
     qreal m_vibrance = 1.25;
     bool m_enabled = true;
     bool m_primaryOnly = false;
     QVector3D m_rgbGains{1.0f, 1.0f, 1.0f};
+    bool m_uniformsDirty = false; // global rgbGain uniform re-upload happens
+                                  // in drawWindow, where the GL context is
+                                  // current (never from D-Bus/config events)
     QVector<AppRule> m_rules;
     QHash<EffectWindow *, WindowMatch> m_windowMatch;
     quint64 m_matchStamp = 0;
     QString m_lastFocusedAppId;
     QHash<QString, std::shared_ptr<GLShader>> m_shaderPool; // per-gain-set shaders
-    bool m_redirecting = false;
     bool m_shaderFailed = false;
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;
