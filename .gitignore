@@ -1,0 +1,7 @@
+build/
+build-*/
+*.so
+.cache/
+compile_commands.json
+.vscode/
+.idea/

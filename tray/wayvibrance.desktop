@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Way Vibrance
+GenericName=Vibrance control
+GenericName[pt_BR]=Controle de vibrance
+Comment=Adjust the desktop color vibrance (Wayland/KDE)
+Comment[pt_BR]=Ajuste a vivacidade de cores do desktop (Wayland/KDE)
+Exec=wayvibrance-tray
+Icon=preferences-desktop-color
+Terminal=false
+Categories=Qt;KDE;Settings;
