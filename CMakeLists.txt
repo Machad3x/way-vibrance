@@ -17,6 +17,9 @@ include(KDECMakeSettings)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui DBus Widgets OpenGL)
 find_package(KF6Config REQUIRED)
+find_package(KF6CoreAddons REQUIRED)
+find_package(KF6DBusAddons REQUIRED)
+find_package(KF6GlobalAccel REQUIRED)
 find_package(KWin REQUIRED)
 
 add_subdirectory(effect)

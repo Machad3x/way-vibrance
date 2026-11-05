@@ -12,7 +12,8 @@ if command -v pacman >/dev/null 2>&1; then
     echo "==> Installing build dependencies (pacman)…"
     sudo pacman -Syu --needed --noconfirm \
         base-devel cmake extra-cmake-modules kwin \
-        qt6-base qt6-tools kconfig vulkan-headers libdrm wayland
+        qt6-base qt6-tools kconfig kcoreaddons kdbusaddons kglobalaccel \
+        vulkan-headers libdrm wayland
 fi
 
 echo "==> Configuring…"

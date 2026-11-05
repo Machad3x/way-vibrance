@@ -50,15 +50,17 @@ ao vibrance do driver.
     `redGain`/`greenGain`/`blueGain`, `setRGBGains(r,g,b)` e sinais
     `vibranceChanged`, `enabledChanged`, `rgbGainsChanged`.
 - **`tray/`** — `wayvibrance-tray`: app de bandeja em Qt 6 (slider ao vivo
-  com throttle, presets, liga/desliga, autostart) — é o "GUI" do vibrance-gui.
+  com throttle, 3 sliders de ganho RGB, presets, liga/desliga, hotkey
+  global configurável, autostart) — é o "GUI" do vibrance-gui.
 - **`cli/`** — `wayvibrance`: script de terminal (`wayvibrance 1.25`,
-  `wayvibrance toggle`, `wayvibrance get`).
+  `wayvibrance toggle`, `wayvibrance get`, `wayvibrance rgb R G B`).
 
 ## Requisitos
 
 - **KDE Plasma 6** (KWin 6.0 ou mais novo) em sessão **Wayland**, composição OpenGL.
 - Para compilar (Arch/CachyOS): `scripts/build.sh` instala tudo
-  (`base-devel cmake extra-cmake-modules kwin qt6-base kconfig vulkan-headers`).
+  (`base-devel cmake extra-cmake-modules kwin qt6-base kconfig kcoreaddons
+  kdbusaddons kglobalaccel vulkan-headers`).
 
 ## Instalação
 
@@ -76,6 +78,10 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 - Bandeja/menu: slider 0–250%, **3 sliders de ganho por canal (R/G/B,
   0–200%) com botão "Reset RGB"**, presets (100/125/150/200%), toggle,
   "Start with Plasma".
+- **Hotkey global**: tecla configurável na janela do tray (padrão **Meta+V**,
+  com detector de conflito e botão "Clear"); também editável em
+  *Configurações do Sistema → Atalhos de Teclado → Atalhos da Aplicação →
+  wayvibrance-tray*. Requer o tray rodando — use "Start with Plasma".
 - CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
   `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` · `wayvibrance getrgb`
 - Reset rápido: vibrância `1.0` e canais `1.0` = neutro (efeito fica
@@ -91,7 +97,7 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 | Persistência por sessão | registro | `kwinrc` | ✅ MVP |
 | Tray + autostart | ✅ | ✅ | ✅ MVP |
 | Presets | perfis | presets 100–200% | ✅ MVP |
-| Hotkey para alternar | ✅ | KGlobalAccel no tray | 🔜 roadmap |
+| Hotkey para alternar | ✅ | KGlobalAccel no tray (tecla configurável) | ✅ |
 | Perfis automáticos por app/jogo | ✅ (foco de janela) | `windowActivated` + regras | 🔜 roadmap |
 | Ajuste por monitor | ✅ | scene pass por-output | 🔜 roadmap |
 | Som/OSD ao trocar perfil | ✅ | OSD layer-shell | 🔜 roadmap |
@@ -113,8 +119,8 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 
 ## Roadmap
 
-1. Hotkey global (KGlobalAccel) para toggle — paridade com o feature mais
-   usado do vibrance-gui.
+1. ~~Hotkey global (KGlobalAccel) para toggle~~ ✅ feito (padrão Meta+V,
+   configurável na janela do tray e em Configurações do Sistema → Atalhos).
 2. Perfis por aplicação: valor automático no `windowActivated`
    (por `desktopFileName`/`resourceClass`/fullscreen) com reversão ao sair.
 3. Vibrância "de verdade" (protege tons de pele — algoritmo do

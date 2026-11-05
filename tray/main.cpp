@@ -18,7 +18,9 @@
 #include <QDir>
 #include <QFile>
 #include <QGroupBox>
+#include <QAction>
 #include <QHBoxLayout>
+#include <QKeySequenceEdit>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenu>
@@ -29,11 +31,16 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <KAboutData>
+#include <KDBusService>
+#include <KGlobalAccel>
+#include <KGlobalShortcutInfo>
+
 static constexpr auto s_effectId = "wayvibrance";
 static constexpr auto s_vibranceService = "org.wayvibrance";
 static constexpr auto s_vibrancePath = "/Vibrance";
 static constexpr auto s_vibranceInterface = "org.wayvibrance";
-static constexpr auto s_trayService = "org.wayvibrance.Tray";
+static constexpr auto s_toggleActionId = "toggle-vibrance";
 static constexpr int kMinPercent = 0;
 static constexpr int kMaxPercent = 250;
 static constexpr int kRgbMinPercent = 0;
@@ -62,6 +69,10 @@ public:
         m_rgbTimer.setInterval(40);
         connect(&m_rgbTimer, &QTimer::timeout, this, &VibranceController::flushRGB);
 
+        m_toggleAction = new QAction(QObject::tr("Toggle Way Vibrance"), this);
+        m_toggleAction->setObjectName(QString::fromLatin1(s_toggleActionId));
+        connect(m_toggleAction, &QAction::triggered, this, &VibranceController::toggleVibrance);
+
         connect(&m_watcher, &QDBusServiceWatcher::serviceRegistered,
                 this, &VibranceController::onServiceRegistered);
         connect(&m_watcher, &QDBusServiceWatcher::serviceUnregistered,
@@ -77,6 +88,11 @@ public:
     }
 
     bool effectAvailable() const { return m_interface != nullptr; }
+
+    /** The QAction backing the configurable global hotkey (toggle on/off). */
+    QAction *toggleAction() const { return m_toggleAction; }
+
+    bool enabledState() const { return m_enabledCache; }
 
     /** Loads the effect into KWin if it is not already running. */
     void ensureEffectLoaded()
@@ -126,6 +142,20 @@ public:
         m_rgbTimer.start();
     }
 
+    /**
+     * (Re)registers the toggle hotkey with KGlobalAccel. An empty sequence
+     * removes the binding. Persisted by the KDE global-shortcut daemon, so
+     * the choice survives reboots and also appears (editable) in
+     * System Settings → Shortcuts.
+     */
+    bool registerToggleShortcut(const QKeySequence &sequence)
+    {
+        m_toggleShortcut = sequence;
+        return KGlobalAccel::self()->setGlobalShortcut(m_toggleAction, sequence);
+    }
+
+    QKeySequence toggleShortcut() const { return m_toggleShortcut; }
+
 Q_SIGNALS:
     void availableChanged(bool available);
     /** Emitted when the value changed remotely (effect/CLI), not by this UI. */
@@ -141,12 +171,24 @@ private Q_SLOTS:
 
     void onEnabledChanged(bool enabled)
     {
+        m_enabledCache = enabled;
         Q_EMIT enabledFromEffect(enabled);
     }
 
     void onRGBGainsChanged(double red, double green, double blue)
     {
         Q_EMIT rgbGainsFromEffect(red, green, blue);
+    }
+
+    /** What the global hotkey runs: flip the enabled flag, keeping values. */
+    void toggleVibrance()
+    {
+        if (!m_interface) {
+            // Not connected yet: bring the effect up; the next press toggles.
+            ensureEffectLoaded();
+            return;
+        }
+        requestVibranceEnabled(!m_enabledCache);
     }
 
 private:
@@ -278,6 +320,9 @@ private:
     double m_pendingGreen = 1.0;
     double m_pendingBlue = 1.0;
     bool m_rgbPending = false;
+    QAction *m_toggleAction = nullptr;
+    QKeySequence m_toggleShortcut;
+    bool m_enabledCache = true;
     QDBusServiceWatcher m_watcher;
 };
 
@@ -372,6 +417,68 @@ public:
         presets->addStretch();
         outerLayout->addLayout(presets);
 
+        // Configurable global hotkey (KGlobalAccel: persisted by the KDE
+        // daemon, editable here and in System Settings → Shortcuts).
+        auto *hotkeyGroup = new QGroupBox(tr("Global hotkey"), central);
+        auto *hotkeyLayout = new QVBoxLayout(hotkeyGroup);
+        auto *hotkeyRow = new QHBoxLayout();
+        m_shortcutEdit = new QKeySequenceEdit(hotkeyGroup);
+        m_shortcutEdit->setKeySequence(controller->toggleShortcut());
+        auto *clearButton = new QPushButton(tr("Clear"), hotkeyGroup);
+        hotkeyRow->addWidget(m_shortcutEdit);
+        hotkeyRow->addWidget(clearButton);
+        hotkeyLayout->addLayout(hotkeyRow);
+        m_shortcutInfo = new QLabel(hotkeyGroup);
+        hotkeyLayout->addWidget(m_shortcutInfo);
+        outerLayout->addWidget(hotkeyGroup);
+
+        auto updateConflictLabel = [this](const QKeySequence &seq) {
+            if (seq.isEmpty()) {
+                m_shortcutInfo->setText(tr("No shortcut bound."));
+                return;
+            }
+            const QString own = KAboutData::applicationData().componentName();
+            for (const KGlobalShortcutInfo &other : KGlobalAccel::globalShortcutsByKey(seq)) {
+                if (other.componentUniqueName() == own
+                    && other.uniqueName() == QLatin1String(s_toggleActionId)) {
+                    continue; // our own binding
+                }
+                m_shortcutInfo->setText(tr("Warning: already used by \"%1\".")
+                                            .arg(other.friendlyName().isEmpty()
+                                                     ? other.componentFriendlyName()
+                                                     : other.friendlyName()));
+                return;
+            }
+            m_shortcutInfo->setText(tr("Shortcut available."));
+        };
+        updateConflictLabel(m_shortcutEdit->keySequence());
+
+        connect(m_shortcutEdit, &QKeySequenceEdit::keySequenceChanged, this,
+                [updateConflictLabel](const QKeySequence &seq) {
+                    updateConflictLabel(seq);
+                });
+        connect(m_shortcutEdit, &QKeySequenceEdit::editingFinished, this, [controller, this, updateConflictLabel] {
+            const QKeySequence seq = m_shortcutEdit->keySequence();
+            controller->registerToggleShortcut(seq);
+            updateConflictLabel(seq);
+        });
+        connect(clearButton, &QPushButton::clicked, this, [controller, this, updateConflictLabel] {
+            m_shortcutEdit->clear();
+            controller->registerToggleShortcut(QKeySequence());
+            updateConflictLabel(QKeySequence());
+        });
+        // Keep the picker in sync if the user edits the shortcut in
+        // System Settings while we run.
+        connect(KGlobalAccel::self(), &KGlobalAccel::globalShortcutChanged, this,
+                [this, controller](QAction *action, const QKeySequence &seq) {
+                    if (action != controller->toggleAction()) {
+                        return;
+                    }
+                    m_updatingShortcut = true;
+                    m_shortcutEdit->setKeySequence(seq);
+                    m_updatingShortcut = false;
+                });
+
         m_loadButton = new QPushButton(tr("Load effect into KWin"), central);
         connect(m_loadButton, &QPushButton::clicked, this, [controller] { controller->ensureEffectLoaded(); });
         outerLayout->addWidget(m_loadButton);
@@ -462,8 +569,11 @@ private:
     QLabel *m_statusLabel = nullptr;
     QCheckBox *m_enabledCheck = nullptr;
     QPushButton *m_loadButton = nullptr;
+    QKeySequenceEdit *m_shortcutEdit = nullptr;
+    QLabel *m_shortcutInfo = nullptr;
     bool m_updatingFromEffect = false;
     bool m_updatingRGB = false;
+    bool m_updatingShortcut = false;
 };
 
 static QString autostartFilePath()
@@ -502,13 +612,26 @@ int main(int argc, char *argv[])
     QApplication::setApplicationDisplayName(QStringLiteral("Way Vibrance"));
     QApplication::setQuitOnLastWindowClosed(false);
 
-    // Single instance: if a tray is already running, quit quietly.
-    if (!QDBusConnection::sessionBus().registerService(QLatin1String(s_trayService))) {
-        qInfo() << "Way Vibrance tray is already running.";
-        return 0;
-    }
+    KAboutData about(QStringLiteral("wayvibrance-tray"),
+                     QStringLiteral("Way Vibrance"),
+                     QStringLiteral("0.2.0"),
+                     QObject::tr("System-wide vibrance and per-channel RGB control for KDE Plasma on Wayland"),
+                     KAboutLicense::GPL);
+    KAboutData::setApplicationData(about);
+
+    // Single instance + D-Bus registration under the component name, which
+    // is how the KGlobalAccel daemon reaches us when the hotkey fires.
+    KDBusService dbusService(KDBusService::Unique);
 
     VibranceController controller;
+
+    // Restore or install the global toggle shortcut (default Meta+V).
+    const QList<QKeySequence> saved =
+        KGlobalAccel::self()->globalShortcut(KAboutData::applicationData().componentName(),
+                                             QLatin1String(s_toggleActionId));
+    const QKeySequence sequence = saved.isEmpty() ? QKeySequence(Qt::META | Qt::Key_V) : saved.first();
+    controller.registerToggleShortcut(sequence);
+
     TrayWindow window(&controller);
 
     auto *icon = new QSystemTrayIcon(QIcon::fromTheme(QStringLiteral("preferences-desktop-color")), &app);

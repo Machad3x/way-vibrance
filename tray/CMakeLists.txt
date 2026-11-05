@@ -12,6 +12,9 @@ target_link_libraries(wayvibrance-tray
         Qt6::Gui
         Qt6::Widgets
         Qt6::DBus
+        KF6::CoreAddons
+        KF6::DBusAddons
+        KF6::GlobalAccel
 )
 
 install(TARGETS wayvibrance-tray DESTINATION ${KDE_INSTALL_BINDIR})
