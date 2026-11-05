@@ -137,7 +137,7 @@ public:
      */
     void setPrimaryOnly(bool primaryOnly);
     bool primaryOnly() const;
-    void setPrimaryOutputName(const QString &name); // "" = automatic
+    void setPrimaryOutputName(const QString &name);
     QString primaryOutputName() const;
     QStringList screenList() const; // "name|Manufacturer Model WxH"
 
@@ -250,20 +250,7 @@ private:
     qreal m_vibrance = 1.25;
     bool m_enabled = true;
     bool m_primaryOnly = false;
-    /**
-     * Fixed, pointer-independent target: the output the user picked by name
-     * (tray dropdown / CLI), falling back to the first output — KWin exposes
-     * no compositor-wide "primary" concept to effects, and activeScreen()
-     * follows the mouse, which is not what "primary monitor" means.
-     * Resolved lazily and cached; invalidated on screen hotplug and on
-     * selection/config changes (see primaryTarget() in the .cpp).
-     */
-    void invalidateScreenTarget() const;
-    LogicalOutput *primaryTarget() const;
-
     QString m_primaryOutputName; // empty = first output (automatic)
-    mutable bool m_targetDirty = true;
-    mutable LogicalOutput *m_targetCache = nullptr;
     QVector3D m_rgbGains{1.0f, 1.0f, 1.0f};
     bool m_uniformsDirty = false; // global rgbGain uniform re-upload happens
                                   // in drawWindow, where the GL context is

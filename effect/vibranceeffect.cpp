@@ -7,7 +7,17 @@
 #include "vibranceeffect.h"
 
 #include <window.h>
+
+// Version-tolerant includes for the output classes the screen API talks
+// about: KWin renamed/restructured them across 6.x (Screen → Output →
+// LogicalOutput). We only ever touch them through deduced `auto`, so
+// whatever the installed headers define is enough.
+#if __has_include(<core/output.h>)
 #include <core/output.h>
+#endif
+#if __has_include(<core/screen.h>)
+#include <core/screen.h>
+#endif
 
 #include <opengl/glshader.h>
 #include <opengl/glshadermanager.h>
@@ -50,14 +60,6 @@ VibranceEffect::VibranceEffect()
 
     connect(effects, &EffectsHandler::windowDeleted, this, &VibranceEffect::onWindowDeleted);
     connect(effects, &EffectsHandler::windowActivated, this, &VibranceEffect::onWindowActivated);
-    connect(effects, &EffectsHandler::screenAdded, this, [this](LogicalOutput *) {
-        invalidateScreenTarget();
-        effects->addRepaintFull();
-    });
-    connect(effects, &EffectsHandler::screenRemoved, this, [this](LogicalOutput *) {
-        invalidateScreenTarget();
-        effects->addRepaintFull();
-    });
 
     QDBusConnection bus = QDBusConnection::sessionBus();
     m_dbusRegistered = bus.registerService(QString::fromLatin1(s_dbusServiceName));
@@ -182,35 +184,25 @@ bool VibranceEffect::windowInScope(EffectWindow *w) const
     // Fixed, pointer-independent target: the output picked by name (tray
     // dropdown / CLI), falling back to the first output. KWin exposes no
     // compositor-wide "primary" to effects, and activeScreen() follows the
-    // mouse — which is not what "primary monitor" means.
-    LogicalOutput *target = primaryTarget();
-    return target && w->screen() && w->screen() == target;
-}
-
-void VibranceEffect::invalidateScreenTarget() const
-{
-    m_targetDirty = true;
-}
-
-LogicalOutput *VibranceEffect::primaryTarget() const
-{
-    if (m_targetDirty) {
-        m_targetDirty = false;
-        m_targetCache = nullptr;
-        const QList<LogicalOutput *> screens = effects->screens();
-        if (!m_primaryOutputName.isEmpty()) {
-            for (LogicalOutput *screen : screens) {
-                if (screen->name() == m_primaryOutputName) {
-                    m_targetCache = screen;
-                    break;
-                }
+    // mouse — which is not what "primary monitor" means. Version-tolerant:
+    // every type here is deduced (auto), so whatever the installed KWin
+    // calls its output classes, the effect compiles unchanged.
+    const auto screens = effects->screens();
+    if (screens.isEmpty()) {
+        return true;
+    }
+    const auto windowScreen = w->screen();
+    if (!windowScreen) {
+        return false;
+    }
+    if (!m_primaryOutputName.isEmpty()) {
+        for (const auto screen : screens) {
+            if (screen->name() == m_primaryOutputName) {
+                return windowScreen == screen;
             }
         }
-        if (!m_targetCache && !screens.isEmpty()) {
-            m_targetCache = screens.first(); // unset or unplugged selection
-        }
     }
-    return m_targetCache;
+    return windowScreen == screens.first(); // unset or unplugged selection
 }
 
 QString VibranceEffect::primaryOutputName() const
@@ -225,7 +217,6 @@ void VibranceEffect::setPrimaryOutputName(const QString &name)
         return;
     }
     m_primaryOutputName = trimmed;
-    invalidateScreenTarget();
     Q_EMIT primaryOutputNameChanged(m_primaryOutputName);
     m_persistTimer->start();
     effects->addRepaintFull();
@@ -236,7 +227,9 @@ QStringList VibranceEffect::screenList() const
     QStringList out;
     const auto screens = effects->screens();
     out.reserve(screens.size());
-    for (LogicalOutput *screen : screens) {
+    // Version-tolerant (auto): whatever the installed KWin calls its
+    // outputs, the iteration compiles.
+    for (const auto screen : screens) {
         QString model = QStringLiteral("%1 %2").arg(screen->manufacturer(), screen->model()).trimmed();
         if (model.isEmpty()) {
             model = QStringLiteral("output");
@@ -267,7 +260,6 @@ void VibranceEffect::reloadConfig()
     m_enabled = enabled;
     m_primaryOnly = primaryOnly;
     m_primaryOutputName = primaryOutput;
-    invalidateScreenTarget();
     m_rgbGains = QVector3D(static_cast<float>(qBound(0.0, red, 2.0)),
                            static_cast<float>(qBound(0.0, green, 2.0)),
                            static_cast<float>(qBound(0.0, blue, 2.0)));
