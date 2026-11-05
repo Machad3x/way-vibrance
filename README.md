@@ -195,15 +195,18 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 
 ## Status
 
-Functional and in daily use. Current release: **v0.4.0** — per-app/game
-profiles (vibrance-gui's flagship feature, one step further: per-window
-instead of per-focus): `app:`/`title:` glob rules with per-profile channel
-gains, cosmetic display names, a dedicated editor window with Apply/presets
-and reliable live updates via in-context shader management; 50% joins the
-preset row; two-pane window; CLI `wayvibrance app …`; `build.sh` installs
-missing dependencies without ever updating the system. Everything from
-v0.3.0 (vibrance, RGB channel gains, hotkey, behaviour settings) is kept,
-all capped at the real 0–200% range.
+Functional and in daily use. Current release: **v0.5.0** — the "primary
+monitor" mode now targets a **user-picked output** (tray dropdown /
+`wayvibrance primary output <name>`, persisted; "automatic" = first output),
+replacing the old pointer-following behavior. It builds on v0.4.0: per-app/
+game profiles (vibrance-gui's flagship, one step further: per-window instead
+of per-focus) — `app:`/`title:` glob rules with per-profile channel gains,
+cosmetic display names, a dedicated editor window with Apply/presets and
+reliable live updates via in-context shader management; 50% joins the preset
+row; two-pane window; CLI `wayvibrance app …`; `build.sh` installs missing
+dependencies without ever updating the system. Everything from v0.3.0
+(vibrance, RGB channel gains, hotkey, behaviour settings) is kept, all
+capped at the real 0–200% range.
 
 ## Development
 

@@ -200,15 +200,18 @@ via D-Bus.
 
 ## Estado
 
-Funcional e em uso diário. Release atual: **v0.4.0** — perfis por
-aplicação/jogo (o carro-chefe do vibrance-gui, um passo à frente: por janela
-em vez de por foco): regras por glob `app:`/`title:` com ganhos de canal por
-perfil, nomes de exibição cosméticos, janela de edição própria com
-Apply/presets e atualização confiável via shaders em contexto; 50% entrou na
-fileira de presets; janela em dois painéis; CLI `wayvibrance app …`; o
-`build.sh` instala dependências sem nunca atualizar o sistema. Tudo do
-v0.3.0 (vibrância, ganhos RGB, hotkey, comportamento) segue valendo, com os
-sliders no teto real de 0–200%.
+Funcional e em uso diário. Release atual: **v0.5.0** — o modo "monitor
+primário" agora mira uma **saída escolhida pelo usuário** (dropdown no tray /
+`wayvibrance primary output <nome>`, persistida; "automático" = primeira
+saída), substituindo o antigo comportamento de seguir o cursor. Sobre a base
+da v0.4.0: perfis por aplicação/jogo (o carro-chefe do vibrance-gui, um passo
+à frente: por janela em vez de por foco) — regras por glob `app:`/`title:`
+com ganhos de canal por perfil, nomes de exibição cosméticos, janela de
+edição própria com Apply/presets e atualização confiável via shaders em
+contexto; 50% entrou na fileira de presets; janela em dois painéis; CLI
+`wayvibrance app …`; o `build.sh` instala dependências sem nunca atualizar o
+sistema. Tudo da v0.3.0 (vibrância, ganhos RGB, hotkey, comportamento) segue
+valendo, com os sliders no teto real de 0–200%.
 
 ## Desenvolvimento
 
