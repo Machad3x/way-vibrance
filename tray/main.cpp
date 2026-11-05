@@ -748,29 +748,52 @@ static QString legacyAutostartFilePath()
         .filePath(QStringLiteral("autostart/wayvibrance.desktop"));
 }
 
+static void setAutostartEnabled(bool enabled);
+
 static bool autostartEnabled()
 {
-    // Migrate the entry from the old file name on the fly.
-    if (!QFile::exists(autostartFilePath()) && QFile::exists(legacyAutostartFilePath())) {
-        QFile::rename(legacyAutostartFilePath(), autostartFilePath());
+    // Migrate the entry from the old file name (and the old icon-less stub)
+    // on the fly: any legacy file means "enabled", and we regenerate a
+    // complete entry under the new name.
+    if (QFile::exists(autostartFilePath())) {
+        return true;
     }
-    return QFile::exists(autostartFilePath());
+    if (QFile::exists(legacyAutostartFilePath())) {
+        QFile::remove(legacyAutostartFilePath());
+        setAutostartEnabled(true);
+        return true;
+    }
+    return false;
 }
 
 static void setAutostartEnabled(bool enabled)
 {
-    if (enabled) {
-        QFile file(autostartFilePath());
-        QDir().mkpath(QFileInfo(file).absolutePath());
-        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            file.write("[Desktop Entry]\n"
-                       "Type=Application\n"
-                       "Name=Way Vibrance\n"
-                       "Exec=wayvibrance-tray\n"
-                       "X-GNOME-Autostart-enabled=true\n");
-        }
-    } else {
-        QFile::remove(autostartFilePath());
+    const QString target = autostartFilePath();
+    if (!enabled) {
+        QFile::remove(target);
+        QFile::remove(legacyAutostartFilePath());
+        return;
+    }
+    QDir().mkpath(QFileInfo(target).absolutePath());
+
+    // Prefer the installed desktop entry: Plasma's Autostart settings then
+    // show the full record — name, icon, comment — like any other app.
+    const QString installed = QStandardPaths::locate(
+        QStandardPaths::ApplicationsLocation, QStringLiteral("org.kde.wayvibrance-tray.desktop"));
+    QFile::remove(target);
+    if (!installed.isEmpty() && QFile::copy(installed, target)) {
+        return;
+    }
+
+    // Fallback (running straight from the build tree, app file missing).
+    QFile file(target);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        file.write("[Desktop Entry]\n"
+                   "Type=Application\n"
+                   "Name=Way Vibrance\n"
+                   "Exec=wayvibrance-tray\n"
+                   "Icon=preferences-desktop-color\n"
+                   "X-GNOME-Autostart-enabled=true\n");
     }
 }
 
