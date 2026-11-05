@@ -607,7 +607,16 @@ public:
         setWindowTitle(tr("Way Vibrance"));
 
         auto *central = new QWidget(this);
-        auto *outerLayout = new QVBoxLayout(central);
+        // Two panes: the global controls on the left, the per-app profile
+        // editor on the right — a distinct "section" of the app that hides
+        // (and lets the window collapse back) when unsupported.
+        auto *columns = new QHBoxLayout(central);
+        auto *outerLayout = new QVBoxLayout();
+        columns->addLayout(outerLayout, 5);
+        m_sidePane = new QWidget(central);
+        auto *sideLayout = new QVBoxLayout(m_sidePane);
+        sideLayout->setContentsMargins(0, 0, 0, 0);
+        columns->addWidget(m_sidePane, 4);
 
         m_statusLabel = new QLabel(central);
         outerLayout->addWidget(m_statusLabel);
@@ -689,12 +698,12 @@ public:
 
         // Per-app profiles (the counterpart of vibrance-gui's per-game
         // settings): matching windows override the global vibrance value.
-        m_profileGroup = new QGroupBox(tr("Per-app profiles"), central);
+        m_profileGroup = new QGroupBox(tr("Per-app profiles"), m_sidePane);
         auto *profileLayout = new QVBoxLayout(m_profileGroup);
         m_profileList = new QListWidget(m_profileGroup);
-        m_profileList->setMaximumHeight(110);
+        m_profileList->setMinimumWidth(280);
         m_profileList->setToolTip(tr("Double-click a profile to edit it."));
-        profileLayout->addWidget(m_profileList);
+        profileLayout->addWidget(m_profileList, 1);
         auto *profileButtons = new QHBoxLayout();
         auto *addFocusedButton = new QPushButton(tr("From last focused…"), m_profileGroup);
         addFocusedButton->setToolTip(tr("Pre-fill the app ID of the window you focused before this one."));
@@ -708,7 +717,7 @@ public:
         auto *profileHint = new QLabel(tr("Windows whose app ID (Wayland app_id / X11 WM_CLASS) or title matches a profile are composited with its vibrance; '*' and '?' are wildcards. Profiles need no extra GPU cost."), m_profileGroup);
         profileHint->setWordWrap(true);
         profileLayout->addWidget(profileHint);
-        outerLayout->addWidget(m_profileGroup);
+        sideLayout->addWidget(m_profileGroup, 1);
 
         connect(addButton, &QPushButton::clicked, this, [controller, this] {
             ProfileDialog dialog(this);
@@ -772,9 +781,9 @@ public:
         // Profiles only exist on the newer effect build; an older one answers
         // UnknownMethod and we hide the group instead of faking success.
         connect(controller, &VibranceController::profilesSupportChanged, this, [this](bool supported) {
-            m_profileGroup->setVisible(supported);
+            m_sidePane->setVisible(supported);
         });
-        m_profileGroup->setVisible(controller->profilesSupported());
+        m_sidePane->setVisible(controller->profilesSupported());
 
         // Configurable global hotkey (KGlobalAccel: persisted by the KDE
         // daemon, editable here and in System Settings → Shortcuts).
@@ -881,7 +890,7 @@ public:
         });
 
         setCentralWidget(central);
-        resize(420, 640);
+        resize(780, 620);
 
         connect(m_slider, &QSlider::valueChanged, this, [controller, this](int percent) {
             updateValueLabel(percent);
@@ -978,6 +987,7 @@ private:
     QSlider *m_greenSlider = nullptr;
     QSlider *m_blueSlider = nullptr;
     QGroupBox *m_profileGroup = nullptr;
+    QWidget *m_sidePane = nullptr;
     QListWidget *m_profileList = nullptr;
     QStringList m_profileEntries;
 
