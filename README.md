@@ -77,7 +77,7 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 
 ## Uso
 
-- Bandeja/menu: slider 0–250%, **3 sliders de ganho por canal (R/G/B,
+- Bandeja/menu: slider 0–200%, **3 sliders de ganho por canal (R/G/B,
   0–200%) com botão "Reset RGB"**, presets (100/125/150/200%), toggle,
   "Start with Plasma".
 - **Hotkey global**: sem atalho padrão (não brigamos com o Plasma). Clique no

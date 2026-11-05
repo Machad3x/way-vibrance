@@ -5,7 +5,7 @@
 # wayvibrance - command line control for the Way Vibrance KWin effect.
 #
 # Usage:
-#   wayvibrance                    # print current value (0..4, 1 = neutral)
+#   wayvibrance                    # print current value (0..2, 1 = neutral)
 #   wayvibrance 1.25               # set vibrance to 125%
 #   wayvibrance on | off           # enable/disable (keeps the value)
 #   wayvibrance toggle             # flip between on and off

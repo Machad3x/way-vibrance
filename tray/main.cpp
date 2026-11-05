@@ -44,7 +44,7 @@ static constexpr auto s_vibrancePath = "/Vibrance";
 static constexpr auto s_vibranceInterface = "org.wayvibrance";
 static constexpr auto s_toggleActionId = "toggle-vibrance";
 static constexpr int kMinPercent = 0;
-static constexpr int kMaxPercent = 250;
+static constexpr int kMaxPercent = 200;
 static constexpr int kRgbMinPercent = 0;
 static constexpr int kRgbMaxPercent = 200;
 

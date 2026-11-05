@@ -186,4 +186,5 @@ O efeito absorve as duas mudanças sem pin de versão:
 
 - Fator 1.0 = neutro (Windows: NV 576/1023 ≈ 100%).
 - 2.0 ≈ vibrance máximo equivalente ao driver (NV 1023).
-- UI do tray expõe 0–250% (clamp interno 0–4 no efeito; 0 = P&B).
+- UI do tray expõe 0–200% em todos os sliders (clamp interno [0, 2] no
+  efeito — 2.0 é o teto real da cadeia de cor do KWin; 0 = P&B).

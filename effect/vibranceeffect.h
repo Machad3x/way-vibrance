@@ -103,7 +103,9 @@ public:
     /**
      * Sets the saturation multiplier. 1.0 keeps colors unchanged, values
      * below desaturate and values above boost. The value is clamped to
-     * [0, 4] and persisted (debounced) to kwinrc.
+     * [0, 2] and persisted (debounced) to kwinrc. (2.0 is where KWin's
+     * pipeline saturates — beyond it pixels clip without further boost,
+     * the same ceiling as NVIDIA's 1023 Digital Vibrance value.)
      */
     void setVibrance(qreal value);
     qreal vibrance() const;
@@ -133,7 +135,7 @@ public:
 
     /**
      * Sets per-channel RGB gain multipliers (0 = black, 1 = unchanged,
-     * >1 = boosted, clipping like the driver does). Clamped to [0, 4],
+     * >1 = boosted, clipping like the driver does). Clamped to [0, 2]
      * persisted to kwinrc. While any channel differs from 1.0, windows are
      * redirected through the offscreen shader path.
      */

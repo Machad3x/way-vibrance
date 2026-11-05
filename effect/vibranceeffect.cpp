@@ -136,12 +136,12 @@ void VibranceEffect::reloadConfig()
     const qreal green = cfg.readEntry("GreenGain", 1.0);
     const qreal blue = cfg.readEntry("BlueGain", 1.0);
 
-    m_vibrance = qBound<qreal>(0.0, vibrance, 4.0);
+    m_vibrance = qBound<qreal>(0.0, vibrance, 2.0);
     m_enabled = enabled;
     m_primaryOnly = primaryOnly;
-    m_rgbGains = QVector3D(static_cast<float>(qBound(0.0, red, 4.0)),
-                           static_cast<float>(qBound(0.0, green, 4.0)),
-                           static_cast<float>(qBound(0.0, blue, 4.0)));
+    m_rgbGains = QVector3D(static_cast<float>(qBound(0.0, red, 2.0)),
+                           static_cast<float>(qBound(0.0, green, 2.0)),
+                           static_cast<float>(qBound(0.0, blue, 2.0)));
 
     updateShaderUniforms();
     updateRedirects();
@@ -228,7 +228,7 @@ void VibranceEffect::onWindowAdded(EffectWindow *w)
 
 void VibranceEffect::setVibrance(qreal value)
 {
-    value = qBound<qreal>(0.0, value, 4.0);
+    value = qBound<qreal>(0.0, value, 2.0);
     if (qFuzzyCompare(value, m_vibrance)) {
         return;
     }
@@ -283,9 +283,9 @@ bool VibranceEffect::primaryOnly() const
 
 void VibranceEffect::setRGBGains(qreal red, qreal green, qreal blue)
 {
-    QVector3D gains(static_cast<float>(qBound(0.0, red, 4.0)),
-                   static_cast<float>(qBound(0.0, green, 4.0)),
-                   static_cast<float>(qBound(0.0, blue, 4.0)));
+    QVector3D gains(static_cast<float>(qBound(0.0, red, 2.0)),
+                   static_cast<float>(qBound(0.0, green, 2.0)),
+                   static_cast<float>(qBound(0.0, blue, 2.0)));
     if (qFuzzyCompare(gains, m_rgbGains)) {
         return;
     }
