@@ -16,6 +16,7 @@
 #include <QVector3D>
 
 #include <memory>
+#include <optional>
 
 class QTimer;
 
@@ -156,14 +157,21 @@ public:
      * against the window caption. '*' and '?' are the wildcards.
      *
      * Windows matching a profile are composited with the profile's
-     * vibrance instead of the global one; every other window keeps using
-     * the global value. Profiles ride the same built-in saturation uniform
-     * as the global value, so they cost nothing beyond a per-window lookup.
+     * vibrance (and, when set, its own per-channel RGB gains) instead of
+     * the global values; every other window keeps using the global ones.
+     * Vibrance rides the same built-in saturation uniform as the global
+     * value, so it costs nothing beyond a per-window lookup; profile RGB
+     * gains use one GLShader instance per distinct gain set — redirected
+     * windows already grab through the offscreen pass, so a profile only
+     * compiles a shader the first time its exact gains appear.
      *
      * The serialized form used by D-Bus and kwinrc is
-     * "<app|title>:<pattern>|<vibrance>".
+     * "<app|title>:<pattern>|<vibrance>" plus "|<r>,<g>,<b>" when the
+     * profile carries its own channel gains.
      */
     void setAppRule(const QString &prefixedPattern, qreal vibrance);
+    void setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
+                        qreal red, qreal green, qreal blue);
     void removeAppRule(const QString &prefixedPattern);
     void clearAppRules();
     QStringList appRules() const;
@@ -193,6 +201,8 @@ private:
         QString pattern; // glob without the kind prefix
         bool titleMatch = false;
         qreal vibrance = 1.0;
+        QVector3D gains{1.0f, 1.0f, 1.0f}; // per-profile channel gains
+        bool hasGains() const { return !qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f)); }
         QRegularExpression matcher; // compiled in rebuildMatchers()
     };
 
@@ -206,17 +216,24 @@ private:
     };
 
     qreal vibranceForWindow(EffectWindow *w);
+    QVector3D gainsForWindow(EffectWindow *w);
     void rebuildMatchers();
     void invalidateMatchCache();
     static QString serializedRule(const AppRule &rule);
-    static bool parseRule(const QString &serialized, QString &patternOut, bool &titleOut, qreal &vibranceOut);
+    static bool parseRule(const QString &serialized, AppRule &ruleOut);
+    void applyRule(const QString &prefixedPattern, qreal vibrance,
+                   const std::optional<QVector3D> &gains);
 
     void reloadConfig();
     bool rgbGainsActive() const;
     bool windowInScope(EffectWindow *w) const;
-    void ensureShader();
+    bool ensureShader();
     void updateShaderUniforms();
     void updateRedirects();
+    void applyWindowRedirect(EffectWindow *w);
+    GLShader *shaderForGains(const QVector3D &gains);
+    void pruneShaderPool();
+    static QString gainsKey(const QVector3D &gains);
 
     qreal m_vibrance = 1.25;
     bool m_enabled = true;
@@ -226,6 +243,7 @@ private:
     QHash<EffectWindow *, WindowMatch> m_windowMatch;
     quint64 m_matchStamp = 0;
     QString m_lastFocusedAppId;
+    QHash<QString, std::shared_ptr<GLShader>> m_shaderPool; // per-gain-set shaders
     bool m_redirecting = false;
     bool m_shaderFailed = false;
     bool m_dbusRegistered = false;
@@ -243,8 +261,8 @@ private:
  * Methods: vibrance() -> d ; setVibrance(d) ; enabled() -> b ; setEnabled(b)
  *          toggleEnabled() ; primaryOnly() -> b ; setPrimaryOnly(b)
  *          redGain()/greenGain()/blueGain() -> d ; setRGBGains(d, d, d)
- *          appRules() -> as ; setAppRule(s, d) ; removeAppRule(s)
- *          clearAppRules() ; lastFocusedAppId() -> s
+ *          appRules() -> as ; setAppRule(s, d) ; setAppRuleFull(s, d, d, d, d)
+ *          removeAppRule(s) ; clearAppRules() ; lastFocusedAppId() -> s
  * Signals: vibranceChanged(d) ; enabledChanged(b) ; rgbGainsChanged(d, d, d)
  *          primaryOnlyChanged(b) ; appRulesChanged(as)
  */
@@ -270,6 +288,8 @@ public Q_SLOTS:
     void setRGBGains(qreal red, qreal green, qreal blue);
     QStringList appRules() const;
     void setAppRule(const QString &prefixedPattern, qreal vibrance);
+    void setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
+                        qreal red, qreal green, qreal blue);
     void removeAppRule(const QString &prefixedPattern);
     void clearAppRules();
     QString lastFocusedAppId() const;

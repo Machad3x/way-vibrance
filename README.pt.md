@@ -55,9 +55,12 @@ Menu da bandeja do sistema:
   - **Perfis por aplicação/jogo**: uma lista de regras associa um glob
     (comparado sem diferenciar maiúsculas contra o `app_id` do Wayland /
     `WM_CLASS` do X11, ou contra o título da janela quando o padrão usa o
-    prefixo `title:`) a um valor de vibrância. Janelas que casam substituem o
-    valor global usando o mesmo uniform de saturação embutido — por janela,
-    mesmo sem foco, com custo de GPU zero.
+    prefixo `title:`) a um valor de vibrância e ganhos RGB por canal
+    opcionais. Janelas que casam substituem os valores globais: a vibrância
+    usa o mesmo uniform de saturação embutido (custo zero, funciona até sem
+    foco); os ganhos usam uma instância de GLShader dedicada por conjunto de
+    ganhos distinto — só janelas que realmente usam um perfil são
+    redirecionadas.
   - Valores persistem em `kwinrc` (`[Effect-wayvibrance]` → `Vibrance`,
     `Enabled`, `PrimaryOnly`, `RedGain`, `GreenGain`, `BlueGain`; os perfis
     ficam no subgrupo `[Effect-wayvibrance][WayVibranceAppRules]`).
@@ -66,7 +69,8 @@ Menu da bandeja do sistema:
     métodos `vibrance`, `setVibrance`, `enabled`, `setEnabled`,
     `toggleEnabled`, `primaryOnly`, `setPrimaryOnly`,
     `redGain`/`greenGain`/`blueGain`, `setRGBGains(r,g,b)`, `appRules`,
-    `setAppRule(padrão,vibrância)`, `removeAppRule(padrão)`,
+    `setAppRule(padrão,vibrância)`,
+    `setAppRuleFull(padrão,vibrância,r,g,b)`, `removeAppRule(padrão)`,
     `clearAppRules`, `lastFocusedAppId` e sinais `vibranceChanged`,
     `enabledChanged`, `rgbGainsChanged`, `primaryOnlyChanged`,
     `appRulesChanged`.
@@ -106,13 +110,15 @@ via D-Bus.
   (R/G/B, 0–200%) com "Reset RGB"**, presets (100/125/150/200%),
   liga/desliga.
 - **Perfis por aplicação/jogo** (grupo *Per-app profiles* na janela): cada
-  perfil combina um glob com um valor de vibrância — padrões `app:` (o
-  padrão) casam com o app_id do Wayland / WM_CLASS do X11, padrões `title:`
-  casam com o título da janela (ex.: `title:*Elden Ring*`); `*` e `?` são
-  curingas. O botão *"De último foco…"* pré-preenche o app_id da janela usada
-  por último — dois cliques para cadastrar um jogo. Janelas casadas usam o
-  valor do perfil em vez do global, **mesmo em segundo plano** (diferente do
-  vibrance-gui, que troca só no foco), sem custo extra de GPU.
+  perfil combina um glob com um valor de vibrância e ganhos R/G/B opcionais —
+  padrões `app:` (o padrão) casam com o app_id do Wayland / WM_CLASS do X11,
+  padrões `title:` casam com o título da janela (ex.: `title:*Elden Ring*`);
+  `*` e `?` são curingas. O botão *"De último foco…"* pré-preenche o app_id da
+  janela usada por último — dois cliques para cadastrar um jogo. A lista mostra
+  nomes amigáveis (`org.kde.dolphin` → "Dolphin") e selecionar um perfil abre
+  um editor próprio, com slider de vibrância e os três sliders de canal.
+  Janelas casadas usam os valores do perfil em vez dos globais, **mesmo em
+  segundo plano** (diferente do vibrance-gui, que troca só no foco).
 - **Hotkey global**: sem vínculo padrão (não brigamos com os atalhos do
   Plasma). Clique no campo *Global hotkey* e digite a combinação — aplicada
   e persistida na hora (em `wayvibrancerc`, re-registrada no KGlobalAccel a

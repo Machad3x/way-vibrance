@@ -54,9 +54,12 @@ System tray menu:
     100% nothing is redirected and the cost is back to zero.
   - **Per-app profiles**: a rule list maps a glob (matched, case-insensitively,
     against the Wayland `app_id` / X11 `WM_CLASS`, or the window caption when
-    the pattern is `title:`-prefixed) to its own vibrance value. Matching
-    windows override the global value through the same built-in saturation
-    uniform — per window, even while unfocused, at zero extra GPU cost.
+    the pattern is `title:`-prefixed) to its own vibrance value and optional
+    per-channel RGB gains. Matching windows override the global settings:
+    vibrance through the same built-in saturation uniform (zero extra cost,
+    works even while unfocused), gains through a dedicated GLShader instance
+    per distinct gain set — only windows that actually use a profile are
+    redirected.
   - Values persist to `kwinrc` (`[Effect-wayvibrance]` → `Vibrance`,
     `Enabled`, `PrimaryOnly`, `RedGain`, `GreenGain`, `BlueGain`; profiles in
     the child group `[Effect-wayvibrance][WayVibranceAppRules]`).
@@ -65,7 +68,8 @@ System tray menu:
     `vibrance`, `setVibrance`, `enabled`, `setEnabled`, `toggleEnabled`,
     `primaryOnly`, `setPrimaryOnly`, `redGain`/`greenGain`/`blueGain`,
     `setRGBGains(r,g,b)`, `appRules`, `setAppRule(pattern,vibrance)`,
-    `removeAppRule(pattern)`, `clearAppRules`, `lastFocusedAppId` and signals
+    `setAppRuleFull(pattern,vibrance,r,g,b)`, `removeAppRule(pattern)`,
+    `clearAppRules`, `lastFocusedAppId` and signals
     `vibranceChanged`, `enabledChanged`, `rgbGainsChanged`,
     `primaryOnlyChanged`, `appRulesChanged`.
 - **`tray/`** — `wayvibrance-tray`: Qt 6 tray app (throttled live slider,
@@ -103,13 +107,15 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
   (R/G/B, 0–200%) with "Reset RGB"**, presets (100/125/150/200%), enable
   toggle.
 - **Per-app profiles** (tray group *Per-app profiles*): each profile pairs a
-  glob with a vibrance value — `app:` patterns (the default) match the
-  Wayland app_id / X11 WM_CLASS, `title:` patterns match the window caption
-  (e.g. `title:*Elden Ring*`); `*` and `?` are wildcards. "*From last
-  focused…*" pre-fills the app ID of the window you used last, so adding a
-  game takes two clicks. Matching windows use the profile value instead of
-  the global one — **even in the background**, unlike vibrance-gui's
-  focus-based switching, and with no extra GPU cost.
+  glob with a vibrance value and optional R/G/B gains — `app:` patterns (the
+  default) match the Wayland app_id / X11 WM_CLASS, `title:` patterns match
+  the window caption (e.g. `title:*Elden Ring*`); `*` and `?` are wildcards.
+  "*From last focused…*" pre-fills the app ID of the window you used last, so
+  adding a game takes two clicks. The list shows friendly names
+  (`org.kde.dolphin` → "Dolphin") and selecting a profile opens a per-profile
+  editor with its own vibrance and channel-gain sliders. Matching windows use
+  the profile values instead of the global ones — **even in the background**,
+  unlike vibrance-gui's focus-based switching.
 - **Global hotkey**: unbound by default (we don't fight Plasma's own
   shortcuts). Click the *Global hotkey* field and press a combination —
   applied and persisted immediately (in `wayvibrancerc`, re-registered with

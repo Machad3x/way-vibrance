@@ -16,6 +16,7 @@
 
 #include <QDebug>
 #include <QDBusConnection>
+#include <QSet>
 #include <QTimer>
 #include <QUrl>
 
@@ -156,17 +157,15 @@ void VibranceEffect::reloadConfig()
     const KConfigGroup rulesCfg = cfg.group(QString::fromLatin1(s_rulesGroupName));
     const QMap<QString, QString> entries = rulesCfg.entryMap();
     for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
-        QString pattern;
-        bool titleMatch = false;
-        qreal ruleVibrance = 1.0;
+        AppRule rule;
         if (!parseRule(QUrl::fromPercentEncoding(it.key().toLatin1()) + QLatin1Char('|') + it.value(),
-                       pattern, titleMatch, ruleVibrance)) {
+                       rule)) {
             continue;
         }
-        AppRule rule;
-        rule.pattern = pattern;
-        rule.titleMatch = titleMatch;
-        rule.vibrance = qBound<qreal>(0.0, ruleVibrance, 2.0);
+        rule.vibrance = qBound<qreal>(0.0, rule.vibrance, 2.0);
+        rule.gains = QVector3D(qBound(0.0f, rule.gains.x(), 2.0f),
+                               qBound(0.0f, rule.gains.y(), 2.0f),
+                               qBound(0.0f, rule.gains.z(), 2.0f));
         m_rules.append(rule);
     }
     rebuildMatchers();
@@ -224,37 +223,78 @@ static QRegularExpression globToMatcher(const QString &glob)
 
 QString VibranceEffect::serializedRule(const AppRule &rule)
 {
-    return QStringLiteral("%1%2|%3")
-        .arg(rule.titleMatch ? QStringLiteral("title:") : QStringLiteral("app:"),
-             rule.pattern)
-        .arg(rule.vibrance, 0, 'g', 6);
+    QString out = QStringLiteral("%1%2|%3")
+                      .arg(rule.titleMatch ? QStringLiteral("title:") : QStringLiteral("app:"),
+                           rule.pattern)
+                      .arg(rule.vibrance, 0, 'g', 6);
+    if (rule.hasGains()) {
+        out += QStringLiteral("|%1,%2,%3")
+                   .arg(rule.gains.x(), 0, 'g', 4)
+                   .arg(rule.gains.y(), 0, 'g', 4)
+                   .arg(rule.gains.z(), 0, 'g', 4);
+    }
+    return out;
 }
 
-bool VibranceEffect::parseRule(const QString &serialized, QString &patternOut, bool &titleOut, qreal &vibranceOut)
+bool VibranceEffect::parseRule(const QString &serialized, AppRule &out)
 {
     const int sep = serialized.lastIndexOf(QLatin1Char('|'));
     if (sep <= 0) {
         return false;
     }
     QString head = serialized.left(sep);
+    const QString tail = serialized.mid(sep + 1);
     bool ok = false;
-    const qreal vibrance = serialized.mid(sep + 1).toDouble(&ok);
+    qreal vibrance = tail.toDouble(&ok);
     if (!ok) {
-        return false;
+        // Optional third field: "r,g,b" per-profile gains.
+        const QStringList parts = tail.split(QLatin1Char(','));
+        if (parts.size() != 3) {
+            return false;
+        }
+        const qreal red = parts.at(0).toDouble(&ok);
+        if (!ok) {
+            return false;
+        }
+        const qreal green = parts.at(1).toDouble(&ok);
+        if (!ok) {
+            return false;
+        }
+        const qreal blue = parts.at(2).toDouble(&ok);
+        if (!ok) {
+            return false;
+        }
+        out.gains = QVector3D(static_cast<float>(red), static_cast<float>(green), static_cast<float>(blue));
+        const int sep2 = head.lastIndexOf(QLatin1Char('|'));
+        if (sep2 <= 0) {
+            return false;
+        }
+        vibrance = head.mid(sep2 + 1).toDouble(&ok);
+        if (!ok) {
+            return false;
+        }
+        head = head.left(sep2);
     }
     if (head.startsWith(QLatin1String("title:"))) {
-        titleOut = true;
+        out.titleMatch = true;
         head = head.mid(6);
     } else if (head.startsWith(QLatin1String("app:"))) {
-        titleOut = false;
+        out.titleMatch = false;
         head = head.mid(4);
     }
     if (head.trimmed().isEmpty()) {
         return false;
     }
-    patternOut = head;
-    vibranceOut = vibrance;
+    out.pattern = head;
+    out.vibrance = vibrance;
     return true;
+}
+
+static QVector3D clampGains(qreal red, qreal green, qreal blue)
+{
+    return QVector3D(static_cast<float>(qBound(0.0, red, 2.0)),
+                     static_cast<float>(qBound(0.0, green, 2.0)),
+                     static_cast<float>(qBound(0.0, blue, 2.0)));
 }
 
 void VibranceEffect::rebuildMatchers()
@@ -270,7 +310,8 @@ void VibranceEffect::invalidateMatchCache()
     m_windowMatch.clear();
 }
 
-void VibranceEffect::setAppRule(const QString &prefixedPattern, qreal vibrance)
+void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
+                               const std::optional<QVector3D> &gains)
 {
     bool titleMatch = false;
     QString pattern = prefixedPattern.trimmed();
@@ -286,30 +327,52 @@ void VibranceEffect::setAppRule(const QString &prefixedPattern, qreal vibrance)
     }
     vibrance = qBound<qreal>(0.0, vibrance, 2.0);
 
+    bool matched = false;
     for (AppRule &rule : m_rules) {
         if (rule.titleMatch == titleMatch && rule.pattern.compare(pattern, Qt::CaseInsensitive) == 0) {
-            if (qFuzzyCompare(rule.vibrance, vibrance)) {
+            matched = true;
+            const bool unchanged = qFuzzyCompare(rule.vibrance, vibrance)
+                && (!gains.has_value() || qFuzzyCompare(rule.gains, *gains));
+            if (unchanged) {
                 return;
             }
             rule.vibrance = vibrance;
+            if (gains.has_value()) {
+                rule.gains = *gains;
+            }
             break;
         }
     }
-    if (std::none_of(m_rules.cbegin(), m_rules.cend(), [&](const AppRule &rule) {
-            return rule.titleMatch == titleMatch && rule.pattern.compare(pattern, Qt::CaseInsensitive) == 0;
-        })) {
+    if (!matched) {
         AppRule rule;
         rule.pattern = pattern;
         rule.titleMatch = titleMatch;
         rule.vibrance = vibrance;
+        if (gains.has_value()) {
+            rule.gains = *gains;
+        }
         m_rules.append(rule);
     }
 
     rebuildMatchers();
     invalidateMatchCache();
+    updateRedirects();
+    pruneShaderPool();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
     effects->addRepaintFull();
+}
+
+void VibranceEffect::setAppRule(const QString &prefixedPattern, qreal vibrance)
+{
+    // Keeps whatever channel gains the profile already carries.
+    applyRule(prefixedPattern, vibrance, std::nullopt);
+}
+
+void VibranceEffect::setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
+                                    qreal red, qreal green, qreal blue)
+{
+    applyRule(prefixedPattern, vibrance, clampGains(red, green, blue));
 }
 
 void VibranceEffect::removeAppRule(const QString &prefixedPattern)
@@ -329,6 +392,8 @@ void VibranceEffect::removeAppRule(const QString &prefixedPattern)
         return;
     }
     invalidateMatchCache();
+    updateRedirects();
+    pruneShaderPool();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
     effects->addRepaintFull();
@@ -341,6 +406,8 @@ void VibranceEffect::clearAppRules()
     }
     m_rules.clear();
     invalidateMatchCache();
+    updateRedirects();
+    pruneShaderPool();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
     effects->addRepaintFull();
@@ -397,6 +464,22 @@ qreal VibranceEffect::vibranceForWindow(EffectWindow *w)
     return entry.ruleIndex >= 0 ? m_rules[entry.ruleIndex].vibrance : m_vibrance;
 }
 
+QVector3D VibranceEffect::gainsForWindow(EffectWindow *w)
+{
+    // Reuse the match entry filled by vibranceForWindow (drawWindow calls
+    // them back to back, so this is a cache hit in practice).
+    vibranceForWindow(w);
+    if (m_rules.isEmpty()) {
+        return m_rgbGains;
+    }
+    const auto it = m_windowMatch.constFind(w);
+    if (it == m_windowMatch.constEnd() || it->ruleIndex < 0) {
+        return m_rgbGains;
+    }
+    const AppRule &rule = m_rules.at(it->ruleIndex);
+    return rule.hasGains() ? rule.gains : m_rgbGains;
+}
+
 void VibranceEffect::onWindowDeleted(EffectWindow *w)
 {
     m_windowMatch.remove(w);
@@ -425,10 +508,13 @@ void VibranceEffect::onWindowActivated(EffectWindow *w)
  * If generation fails the effect degrades gracefully: vibrance keeps working
  * through the built-in uniform and the gains simply do nothing.
  */
-void VibranceEffect::ensureShader()
+bool VibranceEffect::ensureShader()
 {
-    if (m_shader || m_shaderFailed) {
-        return;
+    if (m_shader) {
+        return true;
+    }
+    if (m_shaderFailed) {
+        return false;
     }
     m_shader = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
                                                                  QLatin1String(s_shaderPath));
@@ -436,10 +522,11 @@ void VibranceEffect::ensureShader()
         m_shaderFailed = true;
         qWarning() << "Way Vibrance: failed to load the RGB gain shader" << QLatin1String(s_shaderPath)
                    << "- per-channel gains will be ignored in this session.";
-        return;
+        return false;
     }
     ShaderBinder binder{m_shader.get()};
     m_shader->setUniform("rgbGain", m_rgbGains);
+    return true;
 }
 
 void VibranceEffect::updateShaderUniforms()
@@ -450,38 +537,105 @@ void VibranceEffect::updateShaderUniforms()
     }
 }
 
-void VibranceEffect::updateRedirects()
+QString VibranceEffect::gainsKey(const QVector3D &gains)
 {
-    const bool shouldRedirect = m_enabled && rgbGainsActive();
-    if (shouldRedirect) {
-        ensureShader();
+    return QStringLiteral("%1_%2_%3")
+        .arg(qRound(gains.x() * 1000.0))
+        .arg(qRound(gains.y() * 1000.0))
+        .arg(qRound(gains.z() * 1000.0));
+}
+
+/**
+ * One GLShader instance per distinct gain set: the offscreen pass takes its
+ * values from the shader's uniforms, so a profile with its own gains needs
+ * its own compiled instance (they share the same fragment source, and are
+ * only created while some window actually uses them).
+ */
+GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
+{
+    if (!ensureShader()) {
+        return nullptr;
     }
-    const bool actuallyRedirect = shouldRedirect && m_shader;
-    if (actuallyRedirect == m_redirecting) {
+    if (qFuzzyCompare(gains, m_rgbGains)) {
+        return m_shader.get();
+    }
+    const QString key = gainsKey(gains);
+    const auto it = m_shaderPool.constFind(key);
+    if (it != m_shaderPool.constEnd()) {
+        return it.value().get();
+    }
+    auto fresh = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
+                                                                   QLatin1String(s_shaderPath));
+    if (!fresh) {
+        return nullptr;
+    }
+    {
+        ShaderBinder binder{fresh.get()};
+        fresh->setUniform("rgbGain", gains);
+    }
+    GLShader *raw = fresh.get();
+    m_shaderPool.insert(key, std::shared_ptr<GLShader>(std::move(fresh)));
+    return raw;
+}
+
+void VibranceEffect::pruneShaderPool()
+{
+    // Free instances no effective window-gain set uses any more. Callers
+    // refresh the per-window shaders first, so no window can still point
+    // at a shader we drop here.
+    QSet<QString> inUse;
+    if (m_enabled && rgbGainsActive()) {
+        inUse.insert(gainsKey(m_rgbGains)); // handled by m_shader, but the key is reserved
+    }
+    for (const AppRule &rule : m_rules) {
+        if (m_enabled && rule.hasGains()) {
+            inUse.insert(gainsKey(rule.gains));
+        }
+    }
+    for (auto it = m_shaderPool.begin(); it != m_shaderPool.end();) {
+        if (!inUse.contains(it.key())) {
+            it = m_shaderPool.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void VibranceEffect::applyWindowRedirect(EffectWindow *w)
+{
+    const QVector3D gains = gainsForWindow(w);
+    if (!m_enabled || qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f))) {
+        unredirect(w);
         return;
     }
-    m_redirecting = actuallyRedirect;
-
-    const auto windows = effects->stackingOrder();
-    if (shouldRedirect) {
-        for (EffectWindow *w : windows) {
-            redirect(w);
-            setShader(w, m_shader.get());
-        }
+    if (GLShader *shader = shaderForGains(gains)) {
+        redirect(w);
+        setShader(w, shader);
     } else {
-        for (EffectWindow *w : windows) {
-            unredirect(w);
+        unredirect(w);
+    }
+}
+
+void VibranceEffect::updateRedirects()
+{
+    // Each window follows its own effective gain set (global or the first
+    // matching profile's).
+    bool anyRedirect = false;
+    const auto windows = effects->stackingOrder();
+    for (EffectWindow *w : windows) {
+        applyWindowRedirect(w);
+        const QVector3D gains = gainsForWindow(w);
+        if (m_enabled && !qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f))) {
+            anyRedirect = true;
         }
     }
+    m_redirecting = anyRedirect;
     effects->addRepaintFull();
 }
 
 void VibranceEffect::onWindowAdded(EffectWindow *w)
 {
-    if (m_redirecting) {
-        redirect(w);
-        setShader(w, m_shader.get());
-    }
+    applyWindowRedirect(w);
 }
 
 void VibranceEffect::setVibrance(qreal value)
@@ -550,6 +704,7 @@ void VibranceEffect::setRGBGains(qreal red, qreal green, qreal blue)
     m_rgbGains = gains;
     updateShaderUniforms();
     updateRedirects();
+    pruneShaderPool();
     Q_EMIT rgbGainsChanged(m_rgbGains.x(), m_rgbGains.y(), m_rgbGains.z());
     m_persistTimer->start();
     effects->addRepaintFull();
@@ -582,16 +737,17 @@ void VibranceEffect::persist()
     cfg.writeEntry("BlueGain", static_cast<qreal>(m_rgbGains.z()));
 
     // Per-app profiles live in a child group; keys are the percent-encoded
-    // "kind:pattern", values the vibrance multiplier.
+    // "kind:pattern", values "vibrance" plus "|r,g,b" when the profile
+    // carries its own channel gains.
     cfg.group(QString::fromLatin1(s_rulesGroupName)).deleteGroup();
     if (!m_rules.isEmpty()) {
         KConfigGroup rulesCfg(config, QStringLiteral("Effect-%1").arg(QString::fromLatin1(s_configName)));
         rulesCfg = rulesCfg.group(QString::fromLatin1(s_rulesGroupName));
         for (const AppRule &rule : m_rules) {
             const QString id = serializedRule(rule);
-            rulesCfg.writeEntry(QString::fromLatin1(
-                                    QUrl::toPercentEncoding(id.left(id.lastIndexOf(QLatin1Char('|'))))),
-                                QString::number(rule.vibrance, 'g', 6));
+            const int firstSep = id.indexOf(QLatin1Char('|'));
+            rulesCfg.writeEntry(QString::fromLatin1(QUrl::toPercentEncoding(id.left(firstSep))),
+                                id.mid(firstSep + 1));
         }
     }
     config->sync();
@@ -673,6 +829,12 @@ QStringList WayVibranceAdaptor::appRules() const
 void WayVibranceAdaptor::setAppRule(const QString &prefixedPattern, qreal vibrance)
 {
     m_effect->setAppRule(prefixedPattern, vibrance);
+}
+
+void WayVibranceAdaptor::setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
+                                        qreal red, qreal green, qreal blue)
+{
+    m_effect->setAppRuleFull(prefixedPattern, vibrance, red, green, blue);
 }
 
 void WayVibranceAdaptor::removeAppRule(const QString &prefixedPattern)
