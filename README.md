@@ -16,14 +16,16 @@ master. The native way to get the same result is to do the color grading
 **inside the compositor**, as a post-processing step — visually equivalent
 to driver vibrance.
 
-<!-- ## Screenshots
+## Screenshots
 
-![Tray window: vibrance slider, per-channel RGB gains and presets](docs/screenshots/tray.png)
+Main window — vibrance slider, per-channel RGB gains, presets, global
+hotkey and behaviour settings:
 
-![Desktop at neutral vs boosted vibrance](docs/screenshots/before-after.png)
+![Main window](docs/screenshots/app.jpg)
 
-![wayvibrance CLI](docs/screenshots/cli.png)
--->
+System tray menu:
+
+![Tray menu](docs/screenshots/tray.png)
 
 ## Version compatibility
 

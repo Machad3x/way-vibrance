@@ -17,14 +17,16 @@ master. A solução nativa é fazer o ajuste de cor acontecer **dentro do
 compositor**, como pós-processamento — visualmente equivalente ao vibrance
 do driver.
 
-<!-- ## Capturas de tela
+## Capturas de tela
 
-![Janela da bandeja: slider de vibrance, ganhos RGB por canal e presets](docs/screenshots/tray.png)
+Janela principal — slider de vibrance, ganhos RGB por canal, presets,
+atalho global e configurações de comportamento:
 
-![Mesma tela com vibrance neutro vs. elevado](docs/screenshots/before-after.png)
+![Janela principal](docs/screenshots/app.jpg)
 
-![CLI wayvibrance](docs/screenshots/cli.png)
--->
+Menu da bandeja do sistema:
+
+![Menu da bandeja](docs/screenshots/tray.png)
 
 ## Compatibilidade de versão
 
