@@ -68,8 +68,8 @@ System tray menu:
     `vibrance`, `setVibrance`, `enabled`, `setEnabled`, `toggleEnabled`,
     `primaryOnly`, `setPrimaryOnly`, `redGain`/`greenGain`/`blueGain`,
     `setRGBGains(r,g,b)`, `appRules`, `setAppRule(pattern,vibrance)`,
-    `setAppRuleFull(pattern,vibrance,r,g,b)`, `removeAppRule(pattern)`,
-    `clearAppRules`, `lastFocusedAppId` and signals
+    `setAppRuleFull(pattern,vibrance,r,g,b)`, `setAppRuleName(pattern,name)`,
+    `removeAppRule(pattern)`, `clearAppRules`, `lastFocusedAppId` and signals
     `vibranceChanged`, `enabledChanged`, `rgbGainsChanged`,
     `primaryOnlyChanged`, `appRulesChanged`.
 - **`tray/`** — `wayvibrance-tray`: Qt 6 tray app (throttled live slider,
@@ -112,10 +112,11 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
   the window caption (e.g. `title:*Elden Ring*`); `*` and `?` are wildcards.
   "*From last focused…*" pre-fills the app ID of the window you used last, so
   adding a game takes two clicks. The list shows friendly names
-  (`org.kde.dolphin` → "Dolphin") and selecting a profile opens a per-profile
-  editor with its own vibrance and channel-gain sliders. Matching windows use
-  the profile values instead of the global ones — **even in the background**,
-  unlike vibrance-gui's focus-based switching.
+  (`org.kde.dolphin` → "Dolphin"); double-clicking a profile opens a dedicated
+  window with its vibrance and channel-gain sliders plus an optional cosmetic
+  **display name** for the list entry (matching always keeps using the
+  pattern). Matching windows use the profile values instead of the global ones
+  — **even in the background**, unlike vibrance-gui's focus-based switching.
 - **Global hotkey**: unbound by default (we don't fight Plasma's own
   shortcuts). Click the *Global hotkey* field and press a combination —
   applied and persisted immediately (in `wayvibrancerc`, re-registered with

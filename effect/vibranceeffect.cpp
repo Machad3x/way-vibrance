@@ -227,28 +227,35 @@ QString VibranceEffect::serializedRule(const AppRule &rule)
                       .arg(rule.titleMatch ? QStringLiteral("title:") : QStringLiteral("app:"),
                            rule.pattern)
                       .arg(rule.vibrance, 0, 'g', 6);
-    if (rule.hasGains()) {
+    // Field layout: kind:pattern|vibrance[|r,g,b[|name]] — the gains field is
+    // emitted whenever a display name exists too, so the name always lands
+    // in the fourth slot.
+    if (rule.hasGains() || !rule.displayName.isEmpty()) {
         out += QStringLiteral("|%1,%2,%3")
                    .arg(rule.gains.x(), 0, 'g', 4)
                    .arg(rule.gains.y(), 0, 'g', 4)
                    .arg(rule.gains.z(), 0, 'g', 4);
+    }
+    if (!rule.displayName.isEmpty()) {
+        out += QLatin1Char('|') + rule.displayName;
     }
     return out;
 }
 
 bool VibranceEffect::parseRule(const QString &serialized, AppRule &out)
 {
-    const int sep = serialized.lastIndexOf(QLatin1Char('|'));
-    if (sep <= 0) {
+    const QStringList fields = serialized.split(QLatin1Char('|'));
+    if (fields.size() < 2 || fields.size() > 4) {
         return false;
     }
-    QString head = serialized.left(sep);
-    const QString tail = serialized.mid(sep + 1);
     bool ok = false;
-    qreal vibrance = tail.toDouble(&ok);
+    const qreal vibrance = fields.at(1).toDouble(&ok);
     if (!ok) {
-        // Optional third field: "r,g,b" per-profile gains.
-        const QStringList parts = tail.split(QLatin1Char(','));
+        return false;
+    }
+    out.vibrance = vibrance;
+    if (fields.size() >= 3) {
+        const QStringList parts = fields.at(2).split(QLatin1Char(','));
         if (parts.size() != 3) {
             return false;
         }
@@ -265,16 +272,11 @@ bool VibranceEffect::parseRule(const QString &serialized, AppRule &out)
             return false;
         }
         out.gains = QVector3D(static_cast<float>(red), static_cast<float>(green), static_cast<float>(blue));
-        const int sep2 = head.lastIndexOf(QLatin1Char('|'));
-        if (sep2 <= 0) {
-            return false;
-        }
-        vibrance = head.mid(sep2 + 1).toDouble(&ok);
-        if (!ok) {
-            return false;
-        }
-        head = head.left(sep2);
     }
+    if (fields.size() == 4) {
+        out.displayName = fields.at(3);
+    }
+    QString head = fields.at(0);
     if (head.startsWith(QLatin1String("title:"))) {
         out.titleMatch = true;
         head = head.mid(6);
@@ -286,7 +288,6 @@ bool VibranceEffect::parseRule(const QString &serialized, AppRule &out)
         return false;
     }
     out.pattern = head;
-    out.vibrance = vibrance;
     return true;
 }
 
@@ -311,7 +312,8 @@ void VibranceEffect::invalidateMatchCache()
 }
 
 void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
-                               const std::optional<QVector3D> &gains)
+                               const std::optional<QVector3D> &gains,
+                               const std::optional<QString> &name)
 {
     bool titleMatch = false;
     QString pattern = prefixedPattern.trimmed();
@@ -326,19 +328,28 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
         return;
     }
     vibrance = qBound<qreal>(0.0, vibrance, 2.0);
+    QString cleanName;
+    if (name.has_value()) {
+        cleanName = name->trimmed();
+        cleanName.remove(QLatin1Char('|'));
+    }
 
     bool matched = false;
     for (AppRule &rule : m_rules) {
         if (rule.titleMatch == titleMatch && rule.pattern.compare(pattern, Qt::CaseInsensitive) == 0) {
             matched = true;
             const bool unchanged = qFuzzyCompare(rule.vibrance, vibrance)
-                && (!gains.has_value() || qFuzzyCompare(rule.gains, *gains));
+                && (!gains.has_value() || qFuzzyCompare(rule.gains, *gains))
+                && (!name.has_value() || rule.displayName == cleanName);
             if (unchanged) {
                 return;
             }
             rule.vibrance = vibrance;
             if (gains.has_value()) {
                 rule.gains = *gains;
+            }
+            if (name.has_value()) {
+                rule.displayName = cleanName;
             }
             break;
         }
@@ -350,6 +361,9 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
         rule.vibrance = vibrance;
         if (gains.has_value()) {
             rule.gains = *gains;
+        }
+        if (name.has_value()) {
+            rule.displayName = cleanName;
         }
         m_rules.append(rule);
     }
@@ -365,14 +379,41 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
 
 void VibranceEffect::setAppRule(const QString &prefixedPattern, qreal vibrance)
 {
-    // Keeps whatever channel gains the profile already carries.
-    applyRule(prefixedPattern, vibrance, std::nullopt);
+    // Keeps whatever channel gains and display name the profile already carries.
+    applyRule(prefixedPattern, vibrance, std::nullopt, std::nullopt);
 }
 
 void VibranceEffect::setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
                                     qreal red, qreal green, qreal blue)
 {
-    applyRule(prefixedPattern, vibrance, clampGains(red, green, blue));
+    applyRule(prefixedPattern, vibrance, clampGains(red, green, blue), std::nullopt);
+}
+
+void VibranceEffect::setAppRuleName(const QString &prefixedPattern, const QString &name)
+{
+    // Cosmetic-only edit: finds the existing rule and touches nothing else.
+    bool titleMatch = false;
+    QString pattern = prefixedPattern.trimmed();
+    if (pattern.startsWith(QLatin1String("title:"))) {
+        titleMatch = true;
+        pattern = pattern.mid(6).trimmed();
+    } else if (pattern.startsWith(QLatin1String("app:"))) {
+        pattern = pattern.mid(4).trimmed();
+    }
+    QString cleanName = name.trimmed();
+    cleanName.remove(QLatin1Char('|'));
+    for (AppRule &rule : m_rules) {
+        if (rule.titleMatch == titleMatch && rule.pattern.compare(pattern, Qt::CaseInsensitive) == 0) {
+            if (rule.displayName == cleanName) {
+                return;
+            }
+            rule.displayName = cleanName;
+            Q_EMIT appRulesChanged(appRules());
+            m_persistTimer->start();
+            return;
+        }
+    }
+    qWarning() << "Way Vibrance: cannot rename unknown app profile" << prefixedPattern;
 }
 
 void VibranceEffect::removeAppRule(const QString &prefixedPattern)
@@ -835,6 +876,11 @@ void WayVibranceAdaptor::setAppRuleFull(const QString &prefixedPattern, qreal vi
                                         qreal red, qreal green, qreal blue)
 {
     m_effect->setAppRuleFull(prefixedPattern, vibrance, red, green, blue);
+}
+
+void WayVibranceAdaptor::setAppRuleName(const QString &prefixedPattern, const QString &name)
+{
+    m_effect->setAppRuleName(prefixedPattern, name);
 }
 
 void WayVibranceAdaptor::removeAppRule(const QString &prefixedPattern)

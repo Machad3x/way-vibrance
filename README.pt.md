@@ -70,7 +70,8 @@ Menu da bandeja do sistema:
     `toggleEnabled`, `primaryOnly`, `setPrimaryOnly`,
     `redGain`/`greenGain`/`blueGain`, `setRGBGains(r,g,b)`, `appRules`,
     `setAppRule(padrão,vibrância)`,
-    `setAppRuleFull(padrão,vibrância,r,g,b)`, `removeAppRule(padrão)`,
+    `setAppRuleFull(padrão,vibrância,r,g,b)`, `setAppRuleName(padrão,nome)`,
+    `removeAppRule(padrão)`,
     `clearAppRules`, `lastFocusedAppId` e sinais `vibranceChanged`,
     `enabledChanged`, `rgbGainsChanged`, `primaryOnlyChanged`,
     `appRulesChanged`.
@@ -115,10 +116,12 @@ via D-Bus.
   padrões `title:` casam com o título da janela (ex.: `title:*Elden Ring*`);
   `*` e `?` são curingas. O botão *"De último foco…"* pré-preenche o app_id da
   janela usada por último — dois cliques para cadastrar um jogo. A lista mostra
-  nomes amigáveis (`org.kde.dolphin` → "Dolphin") e selecionar um perfil abre
-  um editor próprio, com slider de vibrância e os três sliders de canal.
-  Janelas casadas usam os valores do perfil em vez dos globais, **mesmo em
-  segundo plano** (diferente do vibrance-gui, que troca só no foco).
+  nomes amigáveis (`org.kde.dolphin` → "Dolphin"); duplo clique em um perfil
+  abre uma janela própria com o slider de vibrância e os três sliders de
+  canal, onde também dá para definir um **nome de exibição** cosmético para a
+  linha da lista (o casamento continua usando sempre o padrão). Janelas
+  casadas usam os valores do perfil em vez dos globais, **mesmo em segundo
+  plano** (diferente do vibrance-gui, que troca só no foco).
 - **Hotkey global**: sem vínculo padrão (não brigamos com os atalhos do
   Plasma). Clique no campo *Global hotkey* e digite a combinação — aplicada
   e persistida na hora (em `wayvibrancerc`, re-registrada no KGlobalAccel a

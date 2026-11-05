@@ -13,6 +13,7 @@
 #   wayvibrance app list                       # per-app profiles
 #   wayvibrance app set <padrão> <valor> [v r g b] # app set firefox 1.5 1.2 1 0.9
 #   wayvibrance app del <padrão>               # (prefixo 'title:' casa o título)
+#   wayvibrance app name <padrão> <nome>       # rótulo cosmético na lista
 #   wayvibrance app reset                      # apaga todos os perfis
 #   wayvibrance app focused                    # app_id da última janela focada
 
@@ -115,6 +116,10 @@ case "$cmd" in
                 [ $# -ge 3 ] || { echo "uso: wayvibrance app del <padrão>" >&2; exit 1; }
                 call removeAppRule "$3"
                 ;;
+            name)
+                [ $# -ge 3 ] || { echo "uso: wayvibrance app name <padrão> <nome>  (vazio limpa)" >&2; exit 1; }
+                call setAppRuleName "$3" "${4:-}"
+                ;;
             reset)
                 call clearAppRules
                 ;;
@@ -122,7 +127,7 @@ case "$cmd" in
                 call lastFocusedAppId
                 ;;
             *)
-                echo "uso: wayvibrance app {list|set <padrão> <vib> [r g b]|del <padrão>|reset|focused}" >&2
+                echo "uso: wayvibrance app {list|set <padrão> <vib> [r g b]|del <padrão>|name <padrão> <nome>|reset|focused}" >&2
                 exit 1
                 ;;
         esac

@@ -172,6 +172,7 @@ public:
     void setAppRule(const QString &prefixedPattern, qreal vibrance);
     void setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
                         qreal red, qreal green, qreal blue);
+    void setAppRuleName(const QString &prefixedPattern, const QString &name);
     void removeAppRule(const QString &prefixedPattern);
     void clearAppRules();
     QStringList appRules() const;
@@ -202,6 +203,9 @@ private:
         bool titleMatch = false;
         qreal vibrance = 1.0;
         QVector3D gains{1.0f, 1.0f, 1.0f}; // per-profile channel gains
+        QString displayName; // cosmetic only: what the UI lists instead of
+                             // the friendly form of the pattern (matching
+                             // keeps using the pattern)
         bool hasGains() const { return !qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f)); }
         QRegularExpression matcher; // compiled in rebuildMatchers()
     };
@@ -222,7 +226,7 @@ private:
     static QString serializedRule(const AppRule &rule);
     static bool parseRule(const QString &serialized, AppRule &ruleOut);
     void applyRule(const QString &prefixedPattern, qreal vibrance,
-                   const std::optional<QVector3D> &gains);
+                   const std::optional<QVector3D> &gains, const std::optional<QString> &name);
 
     void reloadConfig();
     bool rgbGainsActive() const;
@@ -262,7 +266,8 @@ private:
  *          toggleEnabled() ; primaryOnly() -> b ; setPrimaryOnly(b)
  *          redGain()/greenGain()/blueGain() -> d ; setRGBGains(d, d, d)
  *          appRules() -> as ; setAppRule(s, d) ; setAppRuleFull(s, d, d, d, d)
- *          removeAppRule(s) ; clearAppRules() ; lastFocusedAppId() -> s
+ *          setAppRuleName(s, s) ; removeAppRule(s) ; clearAppRules() ;
+ *          lastFocusedAppId() -> s
  * Signals: vibranceChanged(d) ; enabledChanged(b) ; rgbGainsChanged(d, d, d)
  *          primaryOnlyChanged(b) ; appRulesChanged(as)
  */
@@ -290,6 +295,7 @@ public Q_SLOTS:
     void setAppRule(const QString &prefixedPattern, qreal vibrance);
     void setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
                         qreal red, qreal green, qreal blue);
+    void setAppRuleName(const QString &prefixedPattern, const QString &name);
     void removeAppRule(const QString &prefixedPattern);
     void clearAppRules();
     QString lastFocusedAppId() const;
