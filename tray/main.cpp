@@ -179,11 +179,11 @@ private:
     {
         const auto value = m_interface->call(QStringLiteral("vibrance"));
         if (!value.isError()) {
-            onVibranceChanged(value.argumentAt<0>());
+            onVibranceChanged(value.arguments().value(0).toDouble());
         }
         const auto enabled = m_interface->call(QStringLiteral("enabled"));
         if (!enabled.isError()) {
-            onEnabledChanged(enabled.argumentAt<0>().toBool());
+            onEnabledChanged(enabled.arguments().value(0).toBool());
         }
     }
 
