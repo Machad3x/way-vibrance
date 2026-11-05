@@ -19,10 +19,16 @@ do driver.
 
 ## Capturas de tela
 
-Janela principal — slider de vibrance, ganhos RGB por canal, presets,
-atalho global e configurações de comportamento:
+Janela principal — vibrância global, ganhos RGB por canal, presets, atalho
+global e configurações de comportamento, com o painel de perfis por
+aplicação à direita:
 
-![Janela principal](docs/screenshots/app.jpg)
+![Janela principal](docs/screenshots/app.png)
+
+Editor de perfil por aplicação — padrão, nome de exibição cosmético,
+presets de vibrância e ganhos de canal próprios:
+
+![Perfil por aplicação](docs/screenshots/profiles.png)
 
 Menu da bandeja do sistema:
 
@@ -189,12 +195,15 @@ via D-Bus.
 
 ## Estado
 
-Funcional e em uso diário. Release atual: **v0.3.0** — vibrância, ganhos por
-canal RGB, hotkey configurável, configurações de comportamento (abrir na
-bandeja, autostart, modo monitor primário), todos os sliders no teto real de
-0–200%. Perfis por aplicação/jogo (o carro-chefe do vibrance-gui, um passo à
-frente: por janela em vez de por foco) já implementados no `main`, aguardando
-release.
+Funcional e em uso diário. Release atual: **v0.4.0** — perfis por
+aplicação/jogo (o carro-chefe do vibrance-gui, um passo à frente: por janela
+em vez de por foco): regras por glob `app:`/`title:` com ganhos de canal por
+perfil, nomes de exibição cosméticos, janela de edição própria com
+Apply/presets e atualização confiável via shaders em contexto; 50% entrou na
+fileira de presets; janela em dois painéis; CLI `wayvibrance app …`; o
+`build.sh` instala dependências sem nunca atualizar o sistema. Tudo do
+v0.3.0 (vibrância, ganhos RGB, hotkey, comportamento) segue valendo, com os
+sliders no teto real de 0–200%.
 
 ## Desenvolvimento
 

@@ -18,10 +18,15 @@ to driver vibrance.
 
 ## Screenshots
 
-Main window — vibrance slider, per-channel RGB gains, presets, global
-hotkey and behaviour settings:
+Main window — global vibrance, per-channel RGB gains, presets, hotkey and
+behaviour settings, with the per-app profiles pane on the right:
 
-![Main window](docs/screenshots/app.jpg)
+![Main window](docs/screenshots/app.png)
+
+Per-app profile editor — pattern, cosmetic display name, vibrance presets
+and dedicated channel gains:
+
+![Per-app profile](docs/screenshots/profiles.png)
 
 System tray menu:
 
@@ -186,11 +191,15 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 
 ## Status
 
-Functional and in daily use. Current release: **v0.3.0** — vibrance, RGB
-channel gains, configurable hotkey, behaviour settings (tray-first start,
-autostart, primary-monitor mode), all capped at the real 0–200% range.
-Per-app/game profiles (vibrance-gui's flagship feature, one step further:
-per-window instead of per-focus) are implemented in `main`, pending release.
+Functional and in daily use. Current release: **v0.4.0** — per-app/game
+profiles (vibrance-gui's flagship feature, one step further: per-window
+instead of per-focus): `app:`/`title:` glob rules with per-profile channel
+gains, cosmetic display names, a dedicated editor window with Apply/presets
+and reliable live updates via in-context shader management; 50% joins the
+preset row; two-pane window; CLI `wayvibrance app …`; `build.sh` installs
+missing dependencies without ever updating the system. Everything from
+v0.3.0 (vibrance, RGB channel gains, hotkey, behaviour settings) is kept,
+all capped at the real 0–200% range.
 
 ## Development
 
