@@ -73,21 +73,23 @@ Menu da bandeja do sistema:
   - Controle ao vivo (sem flicker/`reconfigure`) via **D-Bus**: serviço
     `org.wayvibrance`, objeto `/Vibrance`, interface `org.wayvibrance`,
     métodos `vibrance`, `setVibrance`, `enabled`, `setEnabled`,
-    `toggleEnabled`, `primaryOnly`, `setPrimaryOnly`,
+    `toggleEnabled`, `primaryOnly`, `setPrimaryOnly`, `primaryOutputName`,
+    `setPrimaryOutputName(nome)`, `screenList()`,
     `redGain`/`greenGain`/`blueGain`, `setRGBGains(r,g,b)`, `appRules`,
     `setAppRule(padrão,vibrância)`,
     `setAppRuleFull(padrão,vibrância,r,g,b)`, `setAppRuleName(padrão,nome)`,
     `removeAppRule(padrão)`,
     `clearAppRules`, `lastFocusedAppId` e sinais `vibranceChanged`,
     `enabledChanged`, `rgbGainsChanged`, `primaryOnlyChanged`,
-    `appRulesChanged`.
+    `primaryOutputNameChanged`, `appRulesChanged`.
 - **`tray/`** — `wayvibrance-tray`: app de bandeja em Qt 6 (slider ao vivo
   com throttle, 3 sliders de canal RGB com Reset, presets, liga/desliga,
   editor de perfis por aplicação, hotkey global configurável, autostart,
   configurações de comportamento) — é o "GUI" do vibrance-gui.
 - **`cli/`** — `wayvibrance`: terminal (`wayvibrance 1.25`,
   `wayvibrance toggle`, `wayvibrance get`, `wayvibrance rgb R G B`,
-  `wayvibrance primary on|off|get`, `wayvibrance app list|set|del|reset|focused`).
+  `wayvibrance primary on|off|get|outputs|output <nome>`,
+  `wayvibrance app list|set|del|reset|focused`).
 
 ## Requisitos
 
@@ -141,7 +143,9 @@ via D-Bus.
 - **Comportamento** (um check cada, como o Enabled): *Abrir direto na
   bandeja ao iniciar*, *Iniciar com o Plasma* (autostart, exibido com ícone
   correto no KCM de Autostart), *Afetar apenas o monitor primário* (a
-  correção vale só para a tela ativa; janelas fora são compostas intocadas).
+  correção vale só para a saída escolhida — um dropdown *Primary monitor*
+  aparece sob o check para selecioná-la; "Automatic" é a primeira saída do
+  KWin; janelas fora são compostas intocadas).
 - CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
   `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` ·
   `wayvibrance primary on` · `wayvibrance app list` ·
@@ -161,7 +165,7 @@ via D-Bus.
 | Bandeja + autostart | ✅ | ✅ | ✅ |
 | Presets | perfis | 50/100/125/150/200% | ✅ |
 | Hotkey para alternar | ✅ | KGlobalAccel, tecla configurável | ✅ |
-| Afetar só um monitor | — (via perfis) | modo "monitor primário" (tela ativa) | ✅ |
+| Afetar só um monitor | — (via perfis) | modo "monitor primário" (saída escolhida) | ✅ |
 | Perfis automáticos por app/jogo | ✅ (foco de janela) | regras por janela (`app:`/`title:` glob) — vale até sem foco | ✅ |
 | Valor próprio por monitor | ✅ | valores por saída | 🔜 |
 | Som/OSD ao trocar perfil | ✅ | OSD layer-shell | 🔜 |
@@ -177,9 +181,10 @@ via D-Bus.
 - O binário do plugin é casado com o KWin instalado; um `scripts/build.sh`
   rápido após updates grandes mantém tudo em dia (a compatibilidade de
   fonte é automática — ver acima).
-- "Monitor primário" usa o `activeScreen()` do KWin (a tela sob o cursor)
-  como proxy: a API pública de efeitos não expõe o conceito de saída
-  primária. Seletor por monitor está no roadmap.
+- "Monitor primário" mira a saída que você escolher (por nome de conector,
+  ex. `DP-1`) — a API pública de efeitos do KWin não expõe um conceito de
+  saída primária, então sem escolha usa-se a **primeira** saída; selecione
+  de novo após mudar a configuração de monitores.
 - Com efeito de janela ativo, janelas em fullscreen exclusivo podem perder o
   fast path de direct scanout do compositor (leve custo de latência; medir).
 
@@ -188,7 +193,7 @@ via D-Bus.
 1. Vibrância "de verdade" (protege tons de pele — algoritmo do
    [libvibrant](https://github.com/libvibrant/vibrant-cli)) como modo
    opcional de shader.
-2. Valores por saída com seletor de monitor (substitui o proxy de tela ativa).
+2. Valores por saída (o seletor de monitor já está no tray).
 3. HDR / fidelidade em wide gamut (correção consciente de BT.2020).
 4. PKGBUILD (rebuild automático estilo AUR) para recompilar o efeito a cada
    update do KWin.

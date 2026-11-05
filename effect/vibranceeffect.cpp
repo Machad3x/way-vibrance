@@ -7,6 +7,7 @@
 #include "vibranceeffect.h"
 
 #include <window.h>
+#include <core/output.h>
 
 #include <opengl/glshader.h>
 #include <opengl/glshadermanager.h>
@@ -49,6 +50,14 @@ VibranceEffect::VibranceEffect()
 
     connect(effects, &EffectsHandler::windowDeleted, this, &VibranceEffect::onWindowDeleted);
     connect(effects, &EffectsHandler::windowActivated, this, &VibranceEffect::onWindowActivated);
+    connect(effects, &EffectsHandler::screenAdded, this, [this](LogicalOutput *) {
+        invalidateScreenTarget();
+        effects->addRepaintFull();
+    });
+    connect(effects, &EffectsHandler::screenRemoved, this, [this](LogicalOutput *) {
+        invalidateScreenTarget();
+        effects->addRepaintFull();
+    });
 
     QDBusConnection bus = QDBusConnection::sessionBus();
     m_dbusRegistered = bus.registerService(QString::fromLatin1(s_dbusServiceName));
@@ -170,10 +179,75 @@ bool VibranceEffect::windowInScope(EffectWindow *w) const
     if (!m_primaryOnly) {
         return true;
     }
-    // KWin exposes no public "primary output" to effects; the active screen
-    // (the output holding the pointer) is the closest stable equivalent and
-    // matches typical single-monitor gaming setups.
-    return w->screen() && w->screen() == effects->activeScreen();
+    // Fixed, pointer-independent target: the output picked by name (tray
+    // dropdown / CLI), falling back to the first output. KWin exposes no
+    // compositor-wide "primary" to effects, and activeScreen() follows the
+    // mouse — which is not what "primary monitor" means.
+    LogicalOutput *target = primaryTarget();
+    return target && w->screen() && w->screen() == target;
+}
+
+void VibranceEffect::invalidateScreenTarget() const
+{
+    m_targetDirty = true;
+}
+
+LogicalOutput *VibranceEffect::primaryTarget() const
+{
+    if (m_targetDirty) {
+        m_targetDirty = false;
+        m_targetCache = nullptr;
+        const QList<LogicalOutput *> screens = effects->screens();
+        if (!m_primaryOutputName.isEmpty()) {
+            for (LogicalOutput *screen : screens) {
+                if (screen->name() == m_primaryOutputName) {
+                    m_targetCache = screen;
+                    break;
+                }
+            }
+        }
+        if (!m_targetCache && !screens.isEmpty()) {
+            m_targetCache = screens.first(); // unset or unplugged selection
+        }
+    }
+    return m_targetCache;
+}
+
+QString VibranceEffect::primaryOutputName() const
+{
+    return m_primaryOutputName;
+}
+
+void VibranceEffect::setPrimaryOutputName(const QString &name)
+{
+    const QString trimmed = name.trimmed();
+    if (trimmed == m_primaryOutputName) {
+        return;
+    }
+    m_primaryOutputName = trimmed;
+    invalidateScreenTarget();
+    Q_EMIT primaryOutputNameChanged(m_primaryOutputName);
+    m_persistTimer->start();
+    effects->addRepaintFull();
+}
+
+QStringList VibranceEffect::screenList() const
+{
+    QStringList out;
+    const auto screens = effects->screens();
+    out.reserve(screens.size());
+    for (LogicalOutput *screen : screens) {
+        QString model = QStringLiteral("%1 %2").arg(screen->manufacturer(), screen->model()).trimmed();
+        if (model.isEmpty()) {
+            model = QStringLiteral("output");
+        }
+        const QSize size = screen->geometry().size();
+        out.append(QStringLiteral("%1|%2 — %3x%4")
+                       .arg(screen->name(), model)
+                       .arg(size.width())
+                       .arg(size.height()));
+    }
+    return out;
 }
 
 void VibranceEffect::reloadConfig()
@@ -184,6 +258,7 @@ void VibranceEffect::reloadConfig()
     const qreal vibrance = cfg.readEntry("Vibrance", 1.25);
     const bool enabled = cfg.readEntry("Enabled", true);
     const bool primaryOnly = cfg.readEntry("PrimaryOnly", false);
+    const QString primaryOutput = cfg.readEntry("PrimaryOutput", QString());
     const qreal red = cfg.readEntry("RedGain", 1.0);
     const qreal green = cfg.readEntry("GreenGain", 1.0);
     const qreal blue = cfg.readEntry("BlueGain", 1.0);
@@ -191,6 +266,8 @@ void VibranceEffect::reloadConfig()
     m_vibrance = qBound<qreal>(0.0, vibrance, 2.0);
     m_enabled = enabled;
     m_primaryOnly = primaryOnly;
+    m_primaryOutputName = primaryOutput;
+    invalidateScreenTarget();
     m_rgbGains = QVector3D(static_cast<float>(qBound(0.0, red, 2.0)),
                            static_cast<float>(qBound(0.0, green, 2.0)),
                            static_cast<float>(qBound(0.0, blue, 2.0)));
@@ -220,6 +297,7 @@ void VibranceEffect::reloadConfig()
     Q_EMIT enabledChanged(m_enabled);
     Q_EMIT rgbGainsChanged(m_rgbGains.x(), m_rgbGains.y(), m_rgbGains.z());
     Q_EMIT primaryOnlyChanged(m_primaryOnly);
+    Q_EMIT primaryOutputNameChanged(m_primaryOutputName);
     Q_EMIT appRulesChanged(appRules());
 
     if (effects) {
@@ -760,6 +838,7 @@ void VibranceEffect::persist()
     cfg.writeEntry("Vibrance", m_vibrance);
     cfg.writeEntry("Enabled", m_enabled);
     cfg.writeEntry("PrimaryOnly", m_primaryOnly);
+    cfg.writeEntry("PrimaryOutput", m_primaryOutputName);
     cfg.writeEntry("RedGain", static_cast<qreal>(m_rgbGains.x()));
     cfg.writeEntry("GreenGain", static_cast<qreal>(m_rgbGains.y()));
     cfg.writeEntry("BlueGain", static_cast<qreal>(m_rgbGains.z()));
@@ -791,6 +870,8 @@ WayVibranceAdaptor::WayVibranceAdaptor(VibranceEffect *effect)
     QObject::connect(m_effect, &VibranceEffect::enabledChanged, this, &WayVibranceAdaptor::enabledChanged);
     QObject::connect(m_effect, &VibranceEffect::rgbGainsChanged, this, &WayVibranceAdaptor::rgbGainsChanged);
     QObject::connect(m_effect, &VibranceEffect::primaryOnlyChanged, this, &WayVibranceAdaptor::primaryOnlyChanged);
+    QObject::connect(m_effect, &VibranceEffect::primaryOutputNameChanged, this,
+                     &WayVibranceAdaptor::primaryOutputNameChanged);
     QObject::connect(m_effect, &VibranceEffect::appRulesChanged, this, &WayVibranceAdaptor::appRulesChanged);
 }
 
@@ -827,6 +908,21 @@ bool WayVibranceAdaptor::primaryOnly() const
 void WayVibranceAdaptor::setPrimaryOnly(bool primaryOnly)
 {
     m_effect->setPrimaryOnly(primaryOnly);
+}
+
+QString WayVibranceAdaptor::primaryOutputName() const
+{
+    return m_effect->primaryOutputName();
+}
+
+void WayVibranceAdaptor::setPrimaryOutputName(const QString &name)
+{
+    m_effect->setPrimaryOutputName(name);
+}
+
+QStringList WayVibranceAdaptor::screenList() const
+{
+    return m_effect->screenList();
 }
 
 qreal WayVibranceAdaptor::redGain() const

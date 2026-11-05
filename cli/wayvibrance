@@ -77,7 +77,14 @@ case "$cmd" in
             on)  call setPrimaryOnly true ;;
             off) call setPrimaryOnly false ;;
             get) call primaryOnly ;;
-            *)   echo "usage: wayvibrance primary {on|off|get}" >&2; exit 1 ;;
+            outputs) call screenList ;;
+            output)
+                # 'wayvibrance primary output DP-1' picks the output;
+                # 'primary output ""' goes back to automatic (first output)
+                call setPrimaryOutputName "${3:-}"
+                ;;
+            output-get) call primaryOutputName ;;
+            *)   echo "usage: wayvibrance primary {on|off|get|outputs|output <name>|output-get}" >&2; exit 1 ;;
         esac
         ;;
     rgb)

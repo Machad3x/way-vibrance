@@ -127,13 +127,18 @@ public:
     void toggleVibranceEnabled();
 
     /**
-     * Restricts the color grading to the active screen (the output holding
-     * the pointer — KWin exposes no public "primary output" to effects).
+     * Restricts the color grading to one fixed output — the "primary"
+     * monitor the user picks in the tray (or the first output when unset;
+     * KWin exposes no compositor-wide primary concept to effects, and
+     * activeScreen() follows the pointer, which is not what people mean).
      * Out-of-scope windows are composited untouched, keeping the zero-cost
      * uniform path for them.
      */
     void setPrimaryOnly(bool primaryOnly);
     bool primaryOnly() const;
+    void setPrimaryOutputName(const QString &name); // "" = automatic
+    QString primaryOutputName() const;
+    QStringList screenList() const; // "name|Manufacturer Model WxH"
 
     /**
      * Sets per-channel RGB gain multipliers (0 = black, 1 = unchanged,
@@ -188,6 +193,7 @@ Q_SIGNALS:
     void enabledChanged(bool enabled);
     void rgbGainsChanged(qreal red, qreal green, qreal blue);
     void primaryOnlyChanged(bool primaryOnly);
+    void primaryOutputNameChanged(const QString &name);
     void appRulesChanged(const QStringList &rules);
 
 private Q_SLOTS:
@@ -243,6 +249,20 @@ private:
     qreal m_vibrance = 1.25;
     bool m_enabled = true;
     bool m_primaryOnly = false;
+    /**
+     * Fixed, pointer-independent target: the output the user picked by name
+     * (tray dropdown / CLI), falling back to the first output — KWin exposes
+     * no compositor-wide "primary" concept to effects, and activeScreen()
+     * follows the mouse, which is not what "primary monitor" means.
+     * Resolved lazily and cached; invalidated on screen hotplug and on
+     * selection/config changes (see primaryTarget() in the .cpp).
+     */
+    void invalidateScreenTarget() const;
+    LogicalOutput *primaryTarget() const;
+
+    QString m_primaryOutputName; // empty = first output (automatic)
+    mutable bool m_targetDirty = true;
+    mutable LogicalOutput *m_targetCache = nullptr;
     QVector3D m_rgbGains{1.0f, 1.0f, 1.0f};
     bool m_uniformsDirty = false; // global rgbGain uniform re-upload happens
                                   // in drawWindow, where the GL context is
@@ -267,12 +287,13 @@ private:
  *
  * Methods: vibrance() -> d ; setVibrance(d) ; enabled() -> b ; setEnabled(b)
  *          toggleEnabled() ; primaryOnly() -> b ; setPrimaryOnly(b)
+ *          primaryOutputName() -> s ; setPrimaryOutputName(s) ; screenList() -> as
  *          redGain()/greenGain()/blueGain() -> d ; setRGBGains(d, d, d)
  *          appRules() -> as ; setAppRule(s, d) ; setAppRuleFull(s, d, d, d, d)
  *          setAppRuleName(s, s) ; removeAppRule(s) ; clearAppRules() ;
  *          lastFocusedAppId() -> s
  * Signals: vibranceChanged(d) ; enabledChanged(b) ; rgbGainsChanged(d, d, d)
- *          primaryOnlyChanged(b) ; appRulesChanged(as)
+ *          primaryOnlyChanged(b) ; primaryOutputNameChanged(s) ; appRulesChanged(as)
  */
 class WayVibranceAdaptor : public QDBusAbstractAdaptor
 {
@@ -290,6 +311,9 @@ public Q_SLOTS:
     void toggleEnabled();
     bool primaryOnly() const;
     void setPrimaryOnly(bool primaryOnly);
+    QString primaryOutputName() const;
+    void setPrimaryOutputName(const QString &name);
+    QStringList screenList() const;
     qreal redGain() const;
     qreal greenGain() const;
     qreal blueGain() const;
@@ -308,6 +332,7 @@ Q_SIGNALS:
     void enabledChanged(bool enabled);
     void rgbGainsChanged(qreal red, qreal green, qreal blue);
     void primaryOnlyChanged(bool primaryOnly);
+    void primaryOutputNameChanged(const QString &name);
     void appRulesChanged(const QStringList &rules);
 
 private:

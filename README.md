@@ -71,19 +71,22 @@ System tray menu:
   - Live, flicker-free control over **D-Bus**: service `org.wayvibrance`,
     object `/Vibrance`, interface `org.wayvibrance`, with methods
     `vibrance`, `setVibrance`, `enabled`, `setEnabled`, `toggleEnabled`,
-    `primaryOnly`, `setPrimaryOnly`, `redGain`/`greenGain`/`blueGain`,
+    `primaryOnly`, `setPrimaryOnly`, `primaryOutputName`,
+    `setPrimaryOutputName(name)`, `screenList()`,
+    `redGain`/`greenGain`/`blueGain`,
     `setRGBGains(r,g,b)`, `appRules`, `setAppRule(pattern,vibrance)`,
     `setAppRuleFull(pattern,vibrance,r,g,b)`, `setAppRuleName(pattern,name)`,
     `removeAppRule(pattern)`, `clearAppRules`, `lastFocusedAppId` and signals
     `vibranceChanged`, `enabledChanged`, `rgbGainsChanged`,
-    `primaryOnlyChanged`, `appRulesChanged`.
+    `primaryOnlyChanged`, `primaryOutputNameChanged`, `appRulesChanged`.
 - **`tray/`** — `wayvibrance-tray`: Qt 6 tray app (throttled live slider,
   three RGB channel sliders with Reset, presets, enable toggle, per-app
   profile editor, configurable global hotkey, autostart, behaviour settings)
   — this is the vibrance-gui "GUI".
 - **`cli/`** — `wayvibrance`: terminal control (`wayvibrance 1.25`,
   `wayvibrance toggle`, `wayvibrance get`, `wayvibrance rgb R G B`,
-  `wayvibrance primary on|off|get`, `wayvibrance app list|set|del|reset|focused`).
+  `wayvibrance primary on|off|get|outputs|output <name>`,
+  `wayvibrance app list|set|del|reset|focused`).
 
 ## Requirements
 
@@ -135,8 +138,9 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 - **Behaviour** (one check each, like Enabled): *Open directly to the tray
   on startup*, *Start with Plasma* (autostart, shown with the proper icon
   in Plasma's Autostart settings), *Only affect the primary monitor* (the
-  grading applies only to the active screen; other windows are composited
-  untouched).
+  grading applies only to the chosen output — a *Primary monitor* dropdown
+  appears under the checkbox to pick it; "Automatic" means KWin's first
+  output; windows elsewhere are composited untouched).
 - CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
   `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` ·
   `wayvibrance primary on` · `wayvibrance app list` ·
@@ -156,7 +160,7 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 | Tray + autostart | ✅ | ✅ | ✅ |
 | Presets | profiles | 50/100/125/150/200% | ✅ |
 | Toggle hotkey | ✅ | KGlobalAccel, key configurable | ✅ |
-| Apply only to one monitor | — (profile-based) | "primary monitor" mode (active screen) | ✅ |
+| Apply only to one monitor | — (profile-based) | "primary monitor" mode (picked output) | ✅ |
 | Auto per-app/game profiles | ✅ (window focus) | per-window rules (`app:`/`title:` globs) — applies even unfocused | ✅ |
 | Distinct value per monitor | ✅ | per-output uniform/scene pass | 🔜 |
 | Sound/OSD on profile switch | ✅ | layer-shell OSD | 🔜 |
@@ -172,9 +176,10 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 - The plugin binary is matched to the installed KWin; a quick
   `scripts/build.sh` after major updates keeps it in step (source
   compatibility is automatic — see above).
-- "Primary monitor" uses KWin's `activeScreen()` (the output under the
-  pointer) as a proxy: the public effects API exposes no primary-output
-  concept. Per-monitor pickers are on the roadmap.
+- "Primary monitor" mode targets the output you pick (by connector name,
+  e.g. `DP-1`) — KWin's effects API has no compositor-wide primary concept,
+  so with no pick the **first** output is used; re-pick after changing the
+  monitor setup.
 - With any window effect active, exclusive-fullscreen windows may lose the
   direct-scanout fast path in the compositor (small latency cost; worth
   measuring).
@@ -183,8 +188,7 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 
 1. "True" vibrance (protects skin tones — [libvibrant](https://github.com/libvibrant/vibrant-cli)
    algorithm) as an optional shader mode.
-2. Per-output values with a monitor picker (supersedes the active-screen
-   proxy).
+2. Per-output values (the monitor picker itself is already in the tray).
 3. HDR / wide-gamut correctness (BT.2020 aware grading).
 4. PKGBUILD (AUR-style auto-rebuild) so every KWin update recompiles the
    effect for you.

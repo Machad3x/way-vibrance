@@ -152,6 +152,27 @@ public:
         }
     }
 
+    /** Output names + descriptions the effect sees ("name|desc" entries). */
+    QStringList fetchScreenList()
+    {
+        if (!m_interface) {
+            return {};
+        }
+        const QDBusReply<QStringList> reply = m_interface->call(QStringLiteral("screenList"));
+        return reply.isValid() ? reply.value() : QStringList();
+    }
+
+    /** Empty name selects "automatic" (first output) on the effect side. */
+    void requestSetPrimaryOutput(const QString &name)
+    {
+        if (m_interface) {
+            m_interface->asyncCall(QStringLiteral("setPrimaryOutputName"), name);
+            QTimer::singleShot(160, this, &VibranceController::refreshState);
+        }
+    }
+
+    bool primaryOutputSupported() const { return m_primaryOutputSupported; }
+
     /**
      * Pulls the full current state from the effect and re-emits it as if it
      * had changed remotely, so every slider/checkbox is truthful even if a
@@ -174,6 +195,14 @@ public:
         if (primary.isValid()) {
             onPrimaryOnlyChanged(primary.value());
         }
+        // Monitor-picking support: older effects answer UnknownMethod; we
+        // then hide the dropdown instead of pushing into a void.
+        const QDBusReply<QString> primaryOut = m_interface->call(QStringLiteral("primaryOutputName"));
+        if (primaryOut.isValid() != m_primaryOutputSupported) {
+            m_primaryOutputSupported = primaryOut.isValid();
+        }
+        Q_EMIT primaryOutputStateFromEffect(m_primaryOutputSupported,
+                                            primaryOut.isValid() ? primaryOut.value() : QString());
         const QDBusReply<double> red = m_interface->call(QStringLiteral("redGain"));
         const QDBusReply<double> green = m_interface->call(QStringLiteral("greenGain"));
         const QDBusReply<double> blue = m_interface->call(QStringLiteral("blueGain"));
@@ -339,6 +368,8 @@ Q_SIGNALS:
     void enabledFromEffect(bool enabled);
     void rgbGainsFromEffect(double red, double green, double blue);
     void primaryOnlyFromEffect(bool primaryOnly);
+    /** Monitor-picker capability + current selection from the effect. */
+    void primaryOutputStateFromEffect(bool supported, const QString &name);
     void appRulesFromEffect(const QStringList &rules);
     /** False while talking to an effect build that has no per-app profiles. */
     void profilesSupportChanged(bool supported);
@@ -520,6 +551,7 @@ private:
     bool m_externalsTrusted = false;
     bool m_profilesSupported = false;
     bool m_profilesFull = false;
+    bool m_primaryOutputSupported = false;
     QDBusServiceWatcher m_watcher;
 };
 
@@ -1132,9 +1164,20 @@ public:
         m_autostartCheck = new QCheckBox(tr("Start with Plasma (autostart)"), behaviourGroup);
         m_autostartCheck->setChecked(autostartEnabled());
         m_primaryOnlyCheck = new QCheckBox(tr("Only affect the primary monitor"), behaviourGroup);
+        // Monitor picker, shown only while "primary monitor" mode is on and
+        // the loaded effect supports choosing the output.
+        m_primaryOutputRow = new QWidget(behaviourGroup);
+        auto *outputRowLayout = new QHBoxLayout(m_primaryOutputRow);
+        outputRowLayout->setContentsMargins(16, 0, 0, 0);
+        outputRowLayout->addWidget(new QLabel(tr("Primary monitor:"), m_primaryOutputRow));
+        m_primaryOutputCombo = new QComboBox(m_primaryOutputRow);
+        m_primaryOutputCombo->addItem(tr("Automatic (first output)"), QString());
+        outputRowLayout->addWidget(m_primaryOutputCombo, 1);
+        m_primaryOutputRow->setVisible(false);
         behaviourLayout->addWidget(m_startHiddenCheck);
         behaviourLayout->addWidget(m_autostartCheck);
         behaviourLayout->addWidget(m_primaryOnlyCheck);
+        behaviourLayout->addWidget(m_primaryOutputRow);
         outerLayout->addWidget(behaviourGroup);
 
         connect(m_startHiddenCheck, &QCheckBox::toggled, this, [](bool hidden) {
@@ -1145,9 +1188,34 @@ public:
             Q_EMIT autostartChanged(on);
         });
         connect(m_primaryOnlyCheck, &QCheckBox::toggled, this, [controller, this](bool on) {
+            updateOutputRowVisibility();
             if (!m_updatingFromEffect) {
                 controller->requestPrimaryOnly(on);
             }
+        });
+        // activated() fires only for user choices — programmatic rebuilds
+        // never push back to the effect.
+        connect(m_primaryOutputCombo, &QComboBox::activated, this, [controller, this](int index) {
+            controller->requestSetPrimaryOutput(m_primaryOutputCombo->itemData(index).toString());
+        });
+        connect(controller, &VibranceController::primaryOutputStateFromEffect, this,
+                [this, controller](bool supported, const QString &name) {
+            if (supported) {
+                const QStringList screens = controller->fetchScreenList();
+                m_primaryOutputCombo->clear();
+                m_primaryOutputCombo->addItem(tr("Automatic (first output)"), QString());
+                for (const QString &entry : screens) {
+                    const int sep = entry.indexOf(QLatin1Char('|'));
+                    const QString outputName = sep < 0 ? entry : entry.left(sep);
+                    const QString desc = sep < 0 ? QString() : entry.mid(sep + 1);
+                    m_primaryOutputCombo->addItem(desc.isEmpty() ? outputName
+                                                                 : QStringLiteral("%1 — %2").arg(outputName, desc),
+                                                  outputName);
+                }
+                const int idx = m_primaryOutputCombo->findData(name);
+                m_primaryOutputCombo->setCurrentIndex(idx < 0 ? 0 : idx);
+            }
+            updateOutputRowVisibility();
         });
         connect(controller, &VibranceController::primaryOnlyFromEffect, this, [this](bool on) {
             m_updatingFromEffect = true;
@@ -1233,6 +1301,12 @@ private:
         m_valueLabel->setText(QStringLiteral("%1%").arg(percent));
     }
 
+    void updateOutputRowVisibility()
+    {
+        m_primaryOutputRow->setVisible(m_primaryOnlyCheck->isChecked()
+                                       && m_controller && m_controller->primaryOutputSupported());
+    }
+
     void rebuildProfileList(const QStringList &entries)
     {
         if (entries == m_profileEntries) {
@@ -1313,6 +1387,8 @@ private:
     QCheckBox *m_startHiddenCheck = nullptr;
     QCheckBox *m_autostartCheck = nullptr;
     QCheckBox *m_primaryOnlyCheck = nullptr;
+    QWidget *m_primaryOutputRow = nullptr;
+    QComboBox *m_primaryOutputCombo = nullptr;
     QPushButton *m_loadButton = nullptr;
     QKeySequenceEdit *m_shortcutEdit = nullptr;
     QLabel *m_shortcutInfo = nullptr;
