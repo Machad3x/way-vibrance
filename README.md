@@ -115,8 +115,11 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
   (`org.kde.dolphin` → "Dolphin"); double-clicking a profile opens a dedicated
   window with its vibrance and channel-gain sliders plus an optional cosmetic
   **display name** for the list entry (matching always keeps using the
-  pattern). Matching windows use the profile values instead of the global ones
-  — **even in the background**, unlike vibrance-gui's focus-based switching.
+  pattern). **Apply** pushes changes to the screen live; **OK** closes the
+  window, asking to apply anything left unapplied. On older effect builds the
+  dialog automatically hides what the effect cannot do. Matching windows use
+  the profile values instead of the global ones — **even in the background**,
+  unlike vibrance-gui's focus-based switching.
 - **Global hotkey**: unbound by default (we don't fight Plasma's own
   shortcuts). Click the *Global hotkey* field and press a combination —
   applied and persisted immediately (in `wayvibrancerc`, re-registered with

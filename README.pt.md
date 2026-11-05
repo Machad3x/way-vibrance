@@ -119,9 +119,12 @@ via D-Bus.
   nomes amigáveis (`org.kde.dolphin` → "Dolphin"); duplo clique em um perfil
   abre uma janela própria com o slider de vibrância e os três sliders de
   canal, onde também dá para definir um **nome de exibição** cosmético para a
-  linha da lista (o casamento continua usando sempre o padrão). Janelas
-  casadas usam os valores do perfil em vez dos globais, **mesmo em segundo
-  plano** (diferente do vibrance-gui, que troca só no foco).
+  linha da lista (o casamento continua usando sempre o padrão). **Apply**
+  reflete as mudanças na tela na hora; **OK** fecha a janela, perguntando se
+  quer aplicar o que ficou pendente. Em builds antigas do efeito o diálogo
+  esconde automaticamente o que o efeito não suporta. Janelas casadas usam os
+  valores do perfil em vez dos globais, **mesmo em segundo plano** (diferente
+  do vibrance-gui, que troca só no foco).
 - **Hotkey global**: sem vínculo padrão (não brigamos com os atalhos do
   Plasma). Clique no campo *Global hotkey* e digite a combinação — aplicada
   e persistida na hora (em `wayvibrancerc`, re-registrada no KGlobalAccel a

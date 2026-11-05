@@ -29,7 +29,9 @@
 #include <QListWidget>
 #include <QMainWindow>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QAbstractButton>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStandardPaths>
@@ -184,6 +186,17 @@ public:
         setProfilesSupported(rules.isValid());
         if (rules.isValid()) {
             onAppRulesChanged(rules.value());
+            // Fine-grained capability: profiles with per-channel gains and
+            // display names need the newer setAppRuleFull/setAppRuleName.
+            QDBusMessage intro = QDBusMessage::createMethodCall(
+                QString::fromLatin1(s_vibranceService),
+                QString::fromLatin1(s_vibrancePath),
+                QStringLiteral("org.freedesktop.DBus.Introspectable"),
+                QStringLiteral("Introspect"));
+            const QDBusReply<QString> xml = QDBusConnection::sessionBus().call(intro);
+            m_profilesFull = xml.isValid() && xml.value().contains(QLatin1String("setAppRuleFull"));
+        } else {
+            m_profilesFull = false;
         }
     }
 
@@ -209,17 +222,24 @@ public:
     void requestSetAppRuleFull(const QString &prefixedPattern, double vibrance,
                                double red, double green, double blue)
     {
-        if (m_interface) {
+        if (!m_interface) {
+            return;
+        }
+        if (m_profilesFull) {
             m_interface->asyncCall(QStringLiteral("setAppRuleFull"), prefixedPattern, vibrance,
                                    red, green, blue);
-            QTimer::singleShot(120, this, &VibranceController::refreshState);
+        } else {
+            // Older effect: vibrance-only fallback (gains are not offered in
+            // the dialog in this mode anyway).
+            m_interface->asyncCall(QStringLiteral("setAppRule"), prefixedPattern, vibrance);
         }
+        QTimer::singleShot(120, this, &VibranceController::refreshState);
     }
 
     /** Cosmetic list label; matching keeps using the pattern. */
     void requestSetAppRuleName(const QString &prefixedPattern, const QString &name)
     {
-        if (m_interface) {
+        if (m_interface && m_profilesFull) {
             m_interface->asyncCall(QStringLiteral("setAppRuleName"), prefixedPattern, name);
             QTimer::singleShot(120, this, &VibranceController::refreshState);
         }
@@ -244,6 +264,8 @@ public:
     }
 
     bool profilesSupported() const { return m_profilesSupported; }
+    /** True when the connected effect understands gains + display names. */
+    bool profilesFullApi() const { return m_profilesSupported && m_profilesFull; }
 
     /**
      * (Re)registers the toggle hotkey with KGlobalAccel and persists the
@@ -497,6 +519,7 @@ private:
     bool m_shortcutsReady = false;
     bool m_externalsTrusted = false;
     bool m_profilesSupported = false;
+    bool m_profilesFull = false;
     QDBusServiceWatcher m_watcher;
 };
 
@@ -587,13 +610,20 @@ static QString friendlyAppName(const QString &prefixedPattern)
 
 /**
  * Add/edit dialog for a per-app profile — its own window, mirroring the
- * global controls: match kind, glob pattern, a vibrance slider and the
- * three per-channel gain sliders.
+ * global controls. Apply pushes the values to the effect immediately and
+ * keeps the dialog open; OK closes it, asking to apply first when there
+ * are unapplied edits.
+ *
+ * When the loaded effect predates the per-profile gains/display-name API
+ * (fullApi == false), those sections are hidden instead of silently doing
+ * nothing: pushes then fall back to plain setAppRule(vibrance).
  */
 class ProfileDialog : public QDialog
 {
+    Q_OBJECT
+
 public:
-    explicit ProfileDialog(QWidget *parent = nullptr)
+    explicit ProfileDialog(bool fullApi, QWidget *parent = nullptr)
         : QDialog(parent)
     {
         setWindowTitle(tr("Per-app profile"));
@@ -608,54 +638,77 @@ public:
         matchRow->addWidget(m_kind);
         matchRow->addWidget(m_pattern, 1);
         layout->addLayout(matchRow);
+        connect(m_kind, &QComboBox::currentIndexChanged, this, [this] { markDirty(); });
 
-        auto *nameRow = new QHBoxLayout();
-        nameRow->addWidget(new QLabel(tr("Display name"), this));
-        m_name = new QLineEdit(this);
-        m_name->setPlaceholderText(tr("cosmetic — matching still uses the pattern"));
-        nameRow->addWidget(m_name, 1);
-        layout->addLayout(nameRow);
+        if (fullApi) {
+            auto *nameRow = new QHBoxLayout();
+            nameRow->addWidget(new QLabel(tr("Display name"), this));
+            m_name = new QLineEdit(this);
+            m_name->setPlaceholderText(tr("cosmetic — matching still uses the pattern"));
+            nameRow->addWidget(m_name, 1);
+            layout->addLayout(nameRow);
+            connect(m_name, &QLineEdit::textChanged, this, [this] { markDirty(); });
+        }
 
         layout->addWidget(new QLabel(tr("Vibrance of matching windows"), this));
         makeSliderRow(layout, QString(), QString(), kMinPercent, m_vibSlider, m_vibValue);
 
-        layout->addWidget(new QLabel(tr("Channel gains (these windows only)"), this));
-        makeSliderRow(layout, QStringLiteral("R"), QStringLiteral("#e05555"), kRgbMinPercent, m_redSlider, m_redValue);
-        makeSliderRow(layout, QStringLiteral("G"), QStringLiteral("#55c25a"), kRgbMinPercent, m_greenSlider, m_greenValue);
-        makeSliderRow(layout, QStringLiteral("B"), QStringLiteral("#5b8def"), kRgbMinPercent, m_blueSlider, m_blueValue);
-
-        auto *resetRgb = new QPushButton(tr("Reset RGB"), this);
-        connect(resetRgb, &QPushButton::clicked, this, [this] {
-            m_redSlider->setValue(100);
-            m_greenSlider->setValue(100);
-            m_blueSlider->setValue(100);
-        });
-        layout->addWidget(resetRgb);
+        if (fullApi) {
+            m_gainsBox = new QGroupBox(tr("Channel gains (these windows only)"), this);
+            auto *gainsLayout = new QVBoxLayout(m_gainsBox);
+            makeSliderRow(gainsLayout, QStringLiteral("R"), QStringLiteral("#e05555"), kRgbMinPercent, m_redSlider, m_redValue);
+            makeSliderRow(gainsLayout, QStringLiteral("G"), QStringLiteral("#55c25a"), kRgbMinPercent, m_greenSlider, m_greenValue);
+            makeSliderRow(gainsLayout, QStringLiteral("B"), QStringLiteral("#5b8def"), kRgbMinPercent, m_blueSlider, m_blueValue);
+            auto *resetRgb = new QPushButton(tr("Reset RGB"), m_gainsBox);
+            connect(resetRgb, &QPushButton::clicked, this, [this] {
+                m_redSlider->setValue(100);
+                m_greenSlider->setValue(100);
+                m_blueSlider->setValue(100);
+            });
+            gainsLayout->addWidget(resetRgb);
+            layout->addWidget(m_gainsBox);
+        }
 
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+        buttons->addButton(QDialogButtonBox::Apply);
         m_okButton = buttons->button(QDialogButtonBox::Ok);
+        m_applyButton = buttons->button(QDialogButtonBox::Apply);
+        m_applyButton->setEnabled(false);
         layout->addWidget(buttons);
         connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-        connect(m_pattern, &QLineEdit::textChanged, this, [this] { validate(); });
-        connect(m_kind, &QComboBox::currentIndexChanged, this, [this] { validate(); });
+        connect(m_applyButton, &QAbstractButton::clicked, this, [this] {
+            if (m_dirty) {
+                emit applyRequested();
+                m_dirty = false;
+                updateButtons();
+            }
+        });
+        connect(m_pattern, &QLineEdit::textChanged, this, [this] { validate(); markDirty(); });
 
-        resize(420, 280);
-        validate();
+        resize(420, fullApi ? 320 : 190);
+        updateButtons();
     }
 
     void setFields(bool titleKind, const QString &pattern, int vibrancePercent,
                    int redPercent = 100, int greenPercent = 100, int bluePercent = 100,
                    const QString &displayName = QString())
     {
+        m_suppressDirty = true;
         m_kind->setCurrentIndex(titleKind ? 1 : 0);
         m_pattern->setText(pattern);
-        m_name->setText(displayName);
+        if (m_name) {
+            m_name->setText(displayName);
+        }
         m_vibSlider->setValue(qBound(kMinPercent, vibrancePercent, kMaxPercent));
-        m_redSlider->setValue(qBound(kRgbMinPercent, redPercent, kRgbMaxPercent));
-        m_greenSlider->setValue(qBound(kRgbMinPercent, greenPercent, kRgbMaxPercent));
-        m_blueSlider->setValue(qBound(kRgbMinPercent, bluePercent, kRgbMaxPercent));
+        if (m_redSlider) {
+            m_redSlider->setValue(qBound(kRgbMinPercent, redPercent, kRgbMaxPercent));
+            m_greenSlider->setValue(qBound(kRgbMinPercent, greenPercent, kRgbMaxPercent));
+            m_blueSlider->setValue(qBound(kRgbMinPercent, bluePercent, kRgbMaxPercent));
+        }
+        m_suppressDirty = false;
         validate();
+        updateButtons();
     }
 
     /** The pattern with its kind prefix, as the effect's setAppRule takes it. */
@@ -666,12 +719,48 @@ public:
     }
 
     double ruleVibrance() const { return m_vibSlider->value() / 100.0; }
-    double ruleRed() const { return m_redSlider->value() / 100.0; }
-    double ruleGreen() const { return m_greenSlider->value() / 100.0; }
-    double ruleBlue() const { return m_blueSlider->value() / 100.0; }
-    QString ruleName() const { return m_name->text().trimmed(); }
+    double ruleRed() const { return m_redSlider ? m_redSlider->value() / 100.0 : 1.0; }
+    double ruleGreen() const { return m_greenSlider ? m_greenSlider->value() / 100.0 : 1.0; }
+    double ruleBlue() const { return m_blueSlider ? m_blueSlider->value() / 100.0 : 1.0; }
+    QString ruleName() const { return m_name ? m_name->text().trimmed() : QString(); }
+    bool hasGainsUi() const { return m_redSlider != nullptr; }
+
+Q_SIGNALS:
+    void applyRequested();
+
+protected:
+    void done(int result) override
+    {
+        if (result == Accepted && m_dirty) {
+            const QMessageBox::StandardButton answer = QMessageBox::question(
+                this, tr("Apply changes?"),
+                tr("There are unapplied changes. Apply them before closing?"),
+                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, QMessageBox::Yes);
+            if (answer == QMessageBox::Cancel) {
+                return;
+            }
+            if (answer == QMessageBox::Yes) {
+                emit applyRequested();
+            }
+        }
+        QDialog::done(result);
+    }
 
 private:
+    void markDirty()
+    {
+        if (m_suppressDirty) {
+            return;
+        }
+        m_dirty = true;
+        updateButtons();
+    }
+
+    void updateButtons()
+    {
+        m_applyButton->setEnabled(m_dirty);
+    }
+
     void makeSliderRow(QVBoxLayout *layout, const QString &name, const QString &color,
                        int minimum, QSlider *&slider, QLabel *&value)
     {
@@ -691,8 +780,9 @@ private:
         row->addWidget(slider);
         row->addWidget(value);
         layout->addLayout(row);
-        connect(slider, &QSlider::valueChanged, this, [value](int percent) {
+        connect(slider, &QSlider::valueChanged, this, [this, value](int percent) {
             value->setText(QStringLiteral("%1%").arg(percent));
+            markDirty();
         });
     }
 
@@ -708,6 +798,7 @@ private:
     QComboBox *m_kind = nullptr;
     QLineEdit *m_pattern = nullptr;
     QLineEdit *m_name = nullptr;
+    QGroupBox *m_gainsBox = nullptr;
     QSlider *m_vibSlider = nullptr;
     QLabel *m_vibValue = nullptr;
     QSlider *m_redSlider = nullptr;
@@ -717,6 +808,9 @@ private:
     QSlider *m_blueSlider = nullptr;
     QLabel *m_blueValue = nullptr;
     QPushButton *m_okButton = nullptr;
+    QAbstractButton *m_applyButton = nullptr;
+    bool m_dirty = false;
+    bool m_suppressDirty = false;
 };
 
 class TrayWindow : public QMainWindow
@@ -844,29 +938,47 @@ public:
         profileLayout->addLayout(profileButtons);
         sideLayout->addWidget(m_profileGroup, 1);
 
-        connect(addButton, &QPushButton::clicked, this, [controller, this] {
-            ProfileDialog dialog(this);
-            if (dialog.exec() == QDialog::Accepted) {
-                controller->requestSetAppRuleFull(dialog.prefixedPattern(), dialog.ruleVibrance(),
-                                                  dialog.ruleRed(), dialog.ruleGreen(), dialog.ruleBlue());
-                if (!dialog.ruleName().isEmpty()) {
-                    controller->requestSetAppRuleName(dialog.prefixedPattern(), dialog.ruleName());
-                }
+        // A dialog pushes its values through applyRequested(): the Apply
+        // button emits it directly, and OK emits it after asking, when
+        // something was edited without applying. Renaming a pattern means
+        // remove-old + set-new (the pattern is the rule's identity).
+        auto pushDialog = [controller](const ProfileDialog &dialog, const QString &originalPattern) {
+            const QString pattern = dialog.prefixedPattern();
+            if (!originalPattern.isEmpty() && pattern.compare(originalPattern, Qt::CaseInsensitive) != 0) {
+                controller->requestRemoveAppRule(originalPattern);
             }
+            controller->requestSetAppRuleFull(pattern, dialog.ruleVibrance(),
+                                              dialog.ruleRed(), dialog.ruleGreen(), dialog.ruleBlue());
+            if (dialog.hasGainsUi()) {
+                controller->requestSetAppRuleName(pattern, dialog.ruleName());
+            }
+        };
+
+        connect(addButton, &QPushButton::clicked, this, [controller, this, pushDialog] {
+            ProfileDialog dialog(controller->profilesFullApi(), this);
+            // Remember what Apply last committed so a rename-then-Apply
+            // replaces its own previous rule instead of orphaning it.
+            QString lastApplied;
+            QObject::connect(&dialog, &ProfileDialog::applyRequested, &dialog,
+                             [&dialog, pushDialog, &lastApplied] {
+                pushDialog(dialog, lastApplied);
+                lastApplied = dialog.prefixedPattern();
+            });
+            dialog.exec();
         });
-        connect(addFocusedButton, &QPushButton::clicked, this, [controller, this] {
+        connect(addFocusedButton, &QPushButton::clicked, this, [controller, this, pushDialog] {
             const QString id = controller->fetchLastFocusedAppId();
-            ProfileDialog dialog(this);
+            ProfileDialog dialog(controller->profilesFullApi(), this);
             if (!id.isEmpty()) {
                 dialog.setFields(false, id, 125);
             }
-            if (dialog.exec() == QDialog::Accepted) {
-                controller->requestSetAppRuleFull(dialog.prefixedPattern(), dialog.ruleVibrance(),
-                                                  dialog.ruleRed(), dialog.ruleGreen(), dialog.ruleBlue());
-                if (!dialog.ruleName().isEmpty()) {
-                    controller->requestSetAppRuleName(dialog.prefixedPattern(), dialog.ruleName());
-                }
-            }
+            QString lastApplied;
+            QObject::connect(&dialog, &ProfileDialog::applyRequested, &dialog,
+                             [&dialog, pushDialog, &lastApplied] {
+                pushDialog(dialog, lastApplied);
+                lastApplied = dialog.prefixedPattern();
+            });
+            dialog.exec();
         });
         connect(removeButton, &QPushButton::clicked, this, [controller, this] {
             const QString pattern = currentProfilePattern();
@@ -874,7 +986,7 @@ public:
                 controller->requestRemoveAppRule(pattern);
             }
         });
-        connect(m_profileList, &QListWidget::itemDoubleClicked, this, [controller, this](QListWidgetItem *item) {
+        connect(m_profileList, &QListWidget::itemDoubleClicked, this, [controller, this, pushDialog](QListWidgetItem *item) {
             const int row = m_profileList->row(item);
             if (row < 0 || row >= m_profileEntries.size()) {
                 return;
@@ -885,19 +997,16 @@ public:
             }
             const QString oldPattern = values.prefixedPattern;
             const bool titleKind = oldPattern.startsWith(QLatin1String("title:"));
-            ProfileDialog dialog(this);
+            ProfileDialog dialog(controller->profilesFullApi(), this);
             dialog.setFields(titleKind, oldPattern.mid(titleKind ? 6 : 4), values.vibrancePercent,
                              values.redPercent, values.greenPercent, values.bluePercent, values.displayName);
-            if (dialog.exec() != QDialog::Accepted) {
-                return;
-            }
-            // The pattern is the identity: renaming means remove + add.
-            if (dialog.prefixedPattern().compare(oldPattern, Qt::CaseInsensitive) != 0) {
-                controller->requestRemoveAppRule(oldPattern);
-            }
-            controller->requestSetAppRuleFull(dialog.prefixedPattern(), dialog.ruleVibrance(),
-                                              dialog.ruleRed(), dialog.ruleGreen(), dialog.ruleBlue());
-            controller->requestSetAppRuleName(dialog.prefixedPattern(), dialog.ruleName());
+            QString lastApplied = oldPattern;
+            QObject::connect(&dialog, &ProfileDialog::applyRequested, &dialog,
+                             [&dialog, pushDialog, &lastApplied] {
+                pushDialog(dialog, lastApplied);
+                lastApplied = dialog.prefixedPattern();
+            });
+            dialog.exec();
         });
         connect(controller, &VibranceController::appRulesFromEffect, this, [this](const QStringList &entries) {
             rebuildProfileList(entries);
