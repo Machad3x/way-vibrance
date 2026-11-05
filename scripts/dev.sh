@@ -11,10 +11,12 @@ set -euo pipefail
 
 kwin_effects() {
     # KWin 6.8 hosts /Effects under org.kde.KWin; fall back to the legacy name.
-    if out=$(qdbus6 org.kde.KWin /Effects "org.kde.kwin.Effects.$1" "${@:2}" 2>/dev/null); then
+    local qdbus_bin
+    qdbus_bin="$(command -v qdbus6 || command -v qdbus-qt6 || command -v qdbus)"
+    if out=$("$qdbus_bin" org.kde.KWin /Effects "org.kde.kwin.Effects.$1" "${@:2}" 2>/dev/null); then
         echo "$out"
     else
-        qdbus6 org.kde.kwin.Effects /Effects "org.kde.kwin.Effects.$1" "${@:2}"
+        "$qdbus_bin" org.kde.kwin.Effects /Effects "org.kde.kwin.Effects.$1" "${@:2}"
     fi
 }
 

@@ -25,7 +25,9 @@
 
 set -euo pipefail
 
-QDBUS="${QDBUS:-qdbus6}"
+if [ -z "${QDBUS:-}" ]; then
+    QDBUS="$(command -v qdbus6 || command -v qdbus-qt6 || command -v qdbus || echo qdbus6)"
+fi
 IFACE="org.wayvibrance"
 EFFECTS_IFACE="org.kde.kwin.Effects"
 EFFECT_ID="wayvibrance"

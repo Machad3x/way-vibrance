@@ -94,11 +94,30 @@ Menu da bandeja do sistema:
 ## Requisitos
 
 - **KDE Plasma 6** (KWin 6.0 ou mais novo) em sessão **Wayland**, composição
-  OpenGL. Testado em KWin 6.8 (CachyOS/Arch).
-- Para compilar (Arch/CachyOS): `scripts/build.sh` instala só o que falta
-  (`cmake extra-cmake-modules kwin qt6-base qt6-tools kconfig kcoreaddons
-  kdbusaddons kglobalaccel vulkan-headers libdrm wayland`, mais `base-devel`
-  se não houver `make`) — ele nunca atualiza o sistema.
+  OpenGL. Compilado e testado em KWin 6.3.4 (Debian 13, Ubuntu 25.04),
+  Fedora atual e KWin 6.8 (Arch/CachyOS) — o mesmo fonte, sem pins.
+- Para compilar: `./scripts/build.sh` detecta a família da distro e instala
+  só o que falta — nunca atualiza o sistema:
+  - **Arch & derivadas**: `kwin qt6-base qt6-tools kconfig kcoreaddons
+    kdbusaddons kglobalaccel extra-cmake-modules cmake vulkan-headers libdrm
+    wayland` (+ `base-devel` se não houver `make`).
+  - **Família Fedora/RHEL** (Fedora 40+): `kwin-devel qt6-qtbase-devel
+    qt6-qttools kf6-kconfig-devel kf6-kcoreaddons-devel
+    kf6-kdbusaddons-devel kf6-kglobalaccel-devel libepoxy-devel
+    extra-cmake-modules cmake vulkan-headers libdrm-devel wayland-devel`.
+  - **Família Debian/Ubuntu** (Debian 13+, Ubuntu 24.10+, KDE Neon):
+    `kwin-dev qt6-base-dev qdbus-qt6 libkf6config-dev
+    libkf6coreaddons-dev libkf6dbusaddons-dev libkf6globalaccel-dev
+    libepoxy-dev extra-cmake-modules cmake libvulkan-dev libdrm-dev
+    libwayland-dev pkg-config` (os candidatos são probeados por nome;
+    `kwin-dev` cobre Debian e Ubuntu, alternativas são tentadas
+    automaticamente).
+  - Outras famílias: o script avisa e segue o build se os pacotes de
+    desenvolvimento já estiverem presentes.
+- Distros imutáveis (Silverblue/Kinoite, SteamOS…): compile dentro de
+  `distrobox`/`podman` com os pacotes de desenvolvimento e instale com
+  `PREFIX=~/.local`; carregar o efeito a partir do escopo do usuário está no
+  roadmap.
 
 ## Instalação
 
@@ -197,6 +216,12 @@ via D-Bus.
 3. HDR / fidelidade em wide gamut (correção consciente de BT.2020).
 4. PKGBUILD (rebuild automático estilo AUR) para recompilar o efeito a cada
    update do KWin.
+5. Suporte de primeira classe a distros imutáveis (Silverblue/Kinoite,
+   SteamOS): instalação em escopo do usuário — plugin em
+   `~/.local/share/kwin/effects/plugins`, tray em `~/.local/bin` — com o
+   empacotamento documentado (hoje o diretório de plugins do sistema ganha a
+   varredura do KWin, então isso exige um plano de ordem de carregamento;
+   contêineres/distrobox já funcionam).
 
 ## Estado
 
