@@ -74,20 +74,27 @@ public:
     /** Loads the effect into KWin if it is not already running. */
     void ensureEffectLoaded()
     {
-        QDBusInterface effects(QStringLiteral("org.kde.kwin.Effects"),
-                              QStringLiteral("/Effects"),
-                              QStringLiteral("org.kde.kwin.Effects"));
-        if (!effects.isValid()) {
+        // KWin 6.8+ hosts the /Effects object under the org.kde.KWin service;
+        // older setups also exported a dedicated org.kde.kwin.Effects service.
+        // Try both, same interface.
+        static constexpr const char *kServices[] = {"org.kde.KWin", "org.kde.kwin.Effects"};
+        for (const char *service : kServices) {
+            QDBusInterface effects(QLatin1String(service),
+                                   QStringLiteral("/Effects"),
+                                   QStringLiteral("org.kde.kwin.Effects"));
+            if (!effects.isValid()) {
+                continue;
+            }
+            const QDBusReply<bool> loaded = effects.call(QStringLiteral("isEffectLoaded"),
+                                                         QString::fromLatin1(s_effectId));
+            if (loaded.isValid() && loaded.value()) {
+                return;
+            }
+            // Fire-and-forget: when the effect comes up it registers
+            // org.wayvibrance and the service watcher attaches to it.
+            effects.asyncCall(QStringLiteral("loadEffect"), QString::fromLatin1(s_effectId));
             return;
         }
-        const QDBusReply<bool> loaded = effects.call(QStringLiteral("isEffectLoaded"),
-                                                     QString::fromLatin1(s_effectId));
-        if (loaded.isValid() && loaded.value()) {
-            return;
-        }
-        // Fire-and-forget: when the effect comes up it registers
-        // org.wayvibrance and the service watcher attaches to it.
-        effects.asyncCall(QStringLiteral("loadEffect"), QString::fromLatin1(s_effectId));
     }
 
     void requestVibrancePercent(int percent)

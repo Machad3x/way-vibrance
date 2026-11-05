@@ -9,18 +9,27 @@
 
 set -euo pipefail
 
+kwin_effects() {
+    # KWin 6.8 hosts /Effects under org.kde.KWin; fall back to the legacy name.
+    if out=$(qdbus6 org.kde.KWin /Effects "org.kde.kwin.Effects.$1" "${@:2}" 2>/dev/null); then
+        echo "$out"
+    else
+        qdbus6 org.kde.kwin.Effects /Effects "org.kde.kwin.Effects.$1" "${@:2}"
+    fi
+}
+
 case "${1:-}" in
     load)
-        qdbus6 org.kde.kwin.Effects /Effects org.kde.kwin.Effects.loadEffect wayvibrance
+        kwin_effects loadEffect wayvibrance
         ;;
     unload)
-        qdbus6 org.kde.kwin.Effects /Effects org.kde.kwin.Effects.unloadEffect wayvibrance
+        kwin_effects unloadEffect wayvibrance
         ;;
     toggle)
-        qdbus6 org.kde.kwin.Effects /Effects org.kde.kwin.Effects.toggleEffect wayvibrance
+        kwin_effects toggleEffect wayvibrance
         ;;
     status)
-        qdbus6 org.kde.kwin.Effects /Effects org.kde.kwin.Effects.isEffectLoaded wayvibrance
+        kwin_effects isEffectLoaded wayvibrance
         ;;
     *)
         echo "usage: $0 {load|unload|toggle|status}" >&2

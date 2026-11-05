@@ -15,16 +15,27 @@ set -euo pipefail
 
 QDBUS="${QDBUS:-qdbus6}"
 IFACE="org.wayvibrance"
-KWIN_EFFECTS="org.kde.kwin.Effects"
+EFFECTS_IFACE="org.kde.kwin.Effects"
 EFFECT_ID="wayvibrance"
 
 call() {
     "$QDBUS" "$IFACE" /Vibrance "$IFACE.$1" "${@:2}"
 }
 
+# KWin 6.8 hosts /Effects under the org.kde.KWin service; some setups also
+# expose it as a dedicated org.kde.kwin.Effects service. Probe both.
+EFFECTS_SVC=""
+for svc in org.kde.KWin org.kde.kwin.Effects; do
+    if "$QDBUS" "$svc" /Effects "$EFFECTS_IFACE".listOfEffects >/dev/null 2>&1; then
+        EFFECTS_SVC="$svc"
+        break
+    fi
+done
+
 ensure_loaded() {
-    if ! "$QDBUS" "$KWIN_EFFECTS" /Effects org.kde.kwin.Effects.isEffectLoaded "$EFFECT_ID" | grep -qi true; then
-        "$QDBUS" "$KWIN_EFFECTS" /Effects org.kde.kwin.Effects.loadEffect "$EFFECT_ID" >/dev/null
+    [ -n "$EFFECTS_SVC" ] || { echo "não foi possível falar com o KWin via D-Bus" >&2; exit 1; }
+    if ! "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".isEffectLoaded "$EFFECT_ID" | grep -qi true; then
+        "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".loadEffect "$EFFECT_ID" >/dev/null
         # give the effect a moment to register its D-Bus service
         for _ in 1 2 3 4 5; do
             call vibrance >/dev/null 2>&1 && return

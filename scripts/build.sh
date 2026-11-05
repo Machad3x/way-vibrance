@@ -25,7 +25,9 @@ echo "==> Installing…"
 sudo cmake --install build
 
 echo "==> Loading the effect into KWin…"
-qdbus6 org.kde.kwin.Effects /Effects org.kde.kwin.Effects.loadEffect wayvibrance || true
+qdbus6 org.kde.KWin /Effects org.kde.kwin.Effects.loadEffect wayvibrance \
+    || qdbus6 org.kde.kwin.Effects /Effects org.kde.kwin.Effects.loadEffect wayvibrance \
+    || true
 
 echo "==> Done. Start the tray with: wayvibrance-tray"
 echo "    (or enable 'Start with Plasma' in its tray menu)"
