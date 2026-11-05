@@ -116,12 +116,29 @@ public:
     bool vibranceEnabled() const;
 
     /**
+     * Flips the enabled flag on the server, so controllers (global hotkey)
+     * never need a cached copy of the state — and therefore cannot get
+     * stuck toggling "false to false" if a signal is missed.
+     */
+    void toggleVibranceEnabled();
+
+    /**
+     * Restricts the color grading to the active screen (the output holding
+     * the pointer — KWin exposes no public "primary output" to effects).
+     * Out-of-scope windows are composited untouched, keeping the zero-cost
+     * uniform path for them.
+     */
+    void setPrimaryOnly(bool primaryOnly);
+    bool primaryOnly() const;
+
+    /**
      * Sets per-channel RGB gain multipliers (0 = black, 1 = unchanged,
      * >1 = boosted, clipping like the driver does). Clamped to [0, 4],
      * persisted to kwinrc. While any channel differs from 1.0, windows are
      * redirected through the offscreen shader path.
      */
     void setRGBGains(qreal red, qreal green, qreal blue);
+
     qreal redGain() const;
     qreal greenGain() const;
     qreal blueGain() const;
@@ -130,6 +147,7 @@ Q_SIGNALS:
     void vibranceChanged(qreal value);
     void enabledChanged(bool enabled);
     void rgbGainsChanged(qreal red, qreal green, qreal blue);
+    void primaryOnlyChanged(bool primaryOnly);
 
 private Q_SLOTS:
     void persist();
@@ -138,12 +156,14 @@ private Q_SLOTS:
 private:
     void reloadConfig();
     bool rgbGainsActive() const;
+    bool windowInScope(EffectWindow *w) const;
     void ensureShader();
     void updateShaderUniforms();
     void updateRedirects();
 
     qreal m_vibrance = 1.25;
     bool m_enabled = true;
+    bool m_primaryOnly = false;
     QVector3D m_rgbGains{1.0f, 1.0f, 1.0f};
     bool m_redirecting = false;
     bool m_shaderFailed = false;
@@ -160,8 +180,10 @@ private:
  * Interface: org.wayvibrance
  *
  * Methods: vibrance() -> d ; setVibrance(d) ; enabled() -> b ; setEnabled(b)
+ *          toggleEnabled() ; primaryOnly() -> b ; setPrimaryOnly(b)
  *          redGain()/greenGain()/blueGain() -> d ; setRGBGains(d, d, d)
  * Signals: vibranceChanged(d) ; enabledChanged(b) ; rgbGainsChanged(d, d, d)
+ *          primaryOnlyChanged(b)
  */
 class WayVibranceAdaptor : public QDBusAbstractAdaptor
 {
@@ -176,6 +198,9 @@ public Q_SLOTS:
     void setVibrance(qreal value);
     bool enabled() const;
     void setEnabled(bool enabled);
+    void toggleEnabled();
+    bool primaryOnly() const;
+    void setPrimaryOnly(bool primaryOnly);
     qreal redGain() const;
     qreal greenGain() const;
     qreal blueGain() const;
@@ -185,6 +210,7 @@ Q_SIGNALS:
     void vibranceChanged(qreal value);
     void enabledChanged(bool enabled);
     void rgbGainsChanged(qreal red, qreal green, qreal blue);
+    void primaryOnlyChanged(bool primaryOnly);
 
 private:
     VibranceEffect *m_effect;

@@ -42,13 +42,15 @@ ao vibrance do driver.
     pelo caminho *offscreen* (`OffscreenEffect`) com shader GLSL próprio que
     multiplica os canais em espaço linear. Com os três canais neutros, nada é
     redirecionado e o custo volta a ser zero.
-  - Valor/modo persistem em `kwinrc` (`[Effect-wayvibrance]` → `Vibrance`,
-    `Enabled`, `RedGain`, `GreenGain`, `BlueGain`).
+  - Valores persistem em `kwinrc` (`[Effect-wayvibrance]` → `Vibrance`,
+    `Enabled`, `PrimaryOnly`, `RedGain`, `GreenGain`, `BlueGain`).
   - Controle ao vivo (sem flicker/`reconfigure`) via **D-Bus**:
     serviço `org.wayvibrance`, objeto `/Vibrance`, interface `org.wayvibrance`
     com métodos `vibrance`, `setVibrance`, `enabled`, `setEnabled`,
+    `toggleEnabled`, `primaryOnly`, `setPrimaryOnly`,
     `redGain`/`greenGain`/`blueGain`, `setRGBGains(r,g,b)` e sinais
-    `vibranceChanged`, `enabledChanged`, `rgbGainsChanged`.
+    `vibranceChanged`, `enabledChanged`, `rgbGainsChanged`,
+    `primaryOnlyChanged`.
 - **`tray/`** — `wayvibrance-tray`: app de bandeja em Qt 6 (slider ao vivo
   com throttle, 3 sliders de ganho RGB, presets, liga/desliga, hotkey
   global configurável, autostart) — é o "GUI" do vibrance-gui.
@@ -86,7 +88,13 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
   Way Vibrance* (mudanças feitas lá são absorvidas pelo tray). Requer o
   tray rodando — use "Start with Plasma".
 - CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
-  `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` · `wayvibrance getrgb`
+  `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` · `wayvibrance getrgb` ·
+  `wayvibrance primary on|off|get`
+- **Comportamento** (grupo na janela, um check cada): *Open directly to the
+  tray on startup* (abre sem mostrar a janela; acesso pelo ícone), *Start
+  with Plasma* (autostart), *Only affect the primary monitor* (a correção de
+  cor vale só para a tela ativa — onde está o cursor; as demais janelas são
+  compostas intocadas).
 - Reset rápido: vibrância `1.0` e canais `1.0` = neutro (efeito fica
   inativo, custo zero).
 
@@ -102,7 +110,8 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 | Presets | perfis | presets 100–200% | ✅ MVP |
 | Hotkey para alternar | ✅ | KGlobalAccel no tray (tecla configurável) | ✅ |
 | Perfis automáticos por app/jogo | ✅ (foco de janela) | `windowActivated` + regras | 🔜 roadmap |
-| Ajuste por monitor | ✅ | scene pass por-output | 🔜 roadmap |
+| Aplicar só ao monitor primário | — | checkbox "Only affect the primary monitor" | ✅ |
+| Ajuste por monitor com valores próprios | ✅ (perfis) | valores por-output | 🔜 roadmap |
 | Som/OSD ao trocar perfil | ✅ | OSD layer-shell | 🔜 roadmap |
 
 ## Limitações conhecidas

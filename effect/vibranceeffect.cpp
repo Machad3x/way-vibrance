@@ -102,10 +102,26 @@ auto VibranceEffect::drawWindow(const RenderTarget &renderTarget,
                                 WindowPaintData &data)
     -> decltype(effects->drawWindow(renderTarget, viewport, w, mask, region, data))
 {
-    data.multiplySaturation(m_vibrance);
-    // Windows not redirected (RGB gains neutral) are forwarded straight to
-    // effects->drawWindow() by the base class — no grab, no extra pass.
-    return OffscreenEffect::drawWindow(renderTarget, viewport, w, mask, region, data);
+    if (windowInScope(w)) {
+        data.multiplySaturation(m_vibrance);
+        // Windows not redirected (RGB gains neutral) are forwarded straight
+        // to effects->drawWindow() by the base class — no grab, no extra pass.
+        return OffscreenEffect::drawWindow(renderTarget, viewport, w, mask, region, data);
+    }
+    // "Only primary monitor" mode and this window is elsewhere: bypass both
+    // the uniform and the offscreen pass, drawing it completely untouched.
+    return effects->drawWindow(renderTarget, viewport, w, mask, region, data);
+}
+
+bool VibranceEffect::windowInScope(EffectWindow *w) const
+{
+    if (!m_primaryOnly) {
+        return true;
+    }
+    // KWin exposes no public "primary output" to effects; the active screen
+    // (the output holding the pointer) is the closest stable equivalent and
+    // matches typical single-monitor gaming setups.
+    return w->screen() && w->screen() == effects->activeScreen();
 }
 
 void VibranceEffect::reloadConfig()
@@ -115,12 +131,14 @@ void VibranceEffect::reloadConfig()
     KConfigGroup cfg(config, QStringLiteral("Effect-%1").arg(QString::fromLatin1(s_configName)));
     const qreal vibrance = cfg.readEntry("Vibrance", 1.25);
     const bool enabled = cfg.readEntry("Enabled", true);
+    const bool primaryOnly = cfg.readEntry("PrimaryOnly", false);
     const qreal red = cfg.readEntry("RedGain", 1.0);
     const qreal green = cfg.readEntry("GreenGain", 1.0);
     const qreal blue = cfg.readEntry("BlueGain", 1.0);
 
     m_vibrance = qBound<qreal>(0.0, vibrance, 4.0);
     m_enabled = enabled;
+    m_primaryOnly = primaryOnly;
     m_rgbGains = QVector3D(static_cast<float>(qBound(0.0, red, 4.0)),
                            static_cast<float>(qBound(0.0, green, 4.0)),
                            static_cast<float>(qBound(0.0, blue, 4.0)));
@@ -131,6 +149,7 @@ void VibranceEffect::reloadConfig()
     Q_EMIT vibranceChanged(m_vibrance);
     Q_EMIT enabledChanged(m_enabled);
     Q_EMIT rgbGainsChanged(m_rgbGains.x(), m_rgbGains.y(), m_rgbGains.z());
+    Q_EMIT primaryOnlyChanged(m_primaryOnly);
 
     if (effects) {
         effects->addRepaintFull();
@@ -241,6 +260,27 @@ bool VibranceEffect::vibranceEnabled() const
     return m_enabled;
 }
 
+void VibranceEffect::toggleVibranceEnabled()
+{
+    setVibranceEnabled(!m_enabled);
+}
+
+void VibranceEffect::setPrimaryOnly(bool primaryOnly)
+{
+    if (primaryOnly == m_primaryOnly) {
+        return;
+    }
+    m_primaryOnly = primaryOnly;
+    Q_EMIT primaryOnlyChanged(m_primaryOnly);
+    m_persistTimer->start();
+    effects->addRepaintFull();
+}
+
+bool VibranceEffect::primaryOnly() const
+{
+    return m_primaryOnly;
+}
+
 void VibranceEffect::setRGBGains(qreal red, qreal green, qreal blue)
 {
     QVector3D gains(static_cast<float>(qBound(0.0, red, 4.0)),
@@ -278,6 +318,7 @@ void VibranceEffect::persist()
     KConfigGroup cfg(config, QStringLiteral("Effect-%1").arg(QString::fromLatin1(s_configName)));
     cfg.writeEntry("Vibrance", m_vibrance);
     cfg.writeEntry("Enabled", m_enabled);
+    cfg.writeEntry("PrimaryOnly", m_primaryOnly);
     cfg.writeEntry("RedGain", static_cast<qreal>(m_rgbGains.x()));
     cfg.writeEntry("GreenGain", static_cast<qreal>(m_rgbGains.y()));
     cfg.writeEntry("BlueGain", static_cast<qreal>(m_rgbGains.z()));
@@ -293,6 +334,7 @@ WayVibranceAdaptor::WayVibranceAdaptor(VibranceEffect *effect)
     QObject::connect(m_effect, &VibranceEffect::vibranceChanged, this, &WayVibranceAdaptor::vibranceChanged);
     QObject::connect(m_effect, &VibranceEffect::enabledChanged, this, &WayVibranceAdaptor::enabledChanged);
     QObject::connect(m_effect, &VibranceEffect::rgbGainsChanged, this, &WayVibranceAdaptor::rgbGainsChanged);
+    QObject::connect(m_effect, &VibranceEffect::primaryOnlyChanged, this, &WayVibranceAdaptor::primaryOnlyChanged);
 }
 
 qreal WayVibranceAdaptor::vibrance() const
@@ -313,6 +355,21 @@ bool WayVibranceAdaptor::enabled() const
 void WayVibranceAdaptor::setEnabled(bool enabled)
 {
     m_effect->setVibranceEnabled(enabled);
+}
+
+void WayVibranceAdaptor::toggleEnabled()
+{
+    m_effect->toggleVibranceEnabled();
+}
+
+bool WayVibranceAdaptor::primaryOnly() const
+{
+    return m_effect->primaryOnly();
+}
+
+void WayVibranceAdaptor::setPrimaryOnly(bool primaryOnly)
+{
+    m_effect->setPrimaryOnly(primaryOnly);
 }
 
 qreal WayVibranceAdaptor::redGain() const

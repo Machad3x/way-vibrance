@@ -110,6 +110,20 @@ referência: **CachyOS, Plasma 6.31, KWin 6.8.2, Qt 6.12, sessão Wayland**
   trata como acesso protected ao tipo incompleto; a variante via objeto
   público (`effects->`) compila.
 
+### Escopo "monitor primário" (0.3)
+
+- A API pública de efeitos **não expõe um conceito de "saída primária"**
+  (nada de `primaryScreen()` em `options.h`/`effecthandler.h` instalados).
+  Proxy usado: `EffectsHandler::activeScreen()` — a saída sob o cursor —,
+  público e estável, que em setups de jogo com um monitor "principal"
+  corresponde ao que o usuário espera.
+- O escopo é decidido **por janela, a cada `drawWindow`** (`w->screen()`),
+  então janelas que se movem entre telas entram/saem do efeito
+  naturalmente, sem precisar de sinais de reposicionamento (inexistentes
+  na API pública 6.8). Fora de escopo: bypass total (nem uniform, nem
+  offscreen). O set `redirect()` (ganhos RGB) continua global — texturas de
+  janelas fora de escopo ficam ociosas e o base as descarta/redesenha.
+
 ## 3. Alternativas mapeadas e descartadas
 
 | Caminho | Veredito |

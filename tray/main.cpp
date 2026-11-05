@@ -97,8 +97,6 @@ public:
     /** The QAction backing the configurable global hotkey (toggle on/off). */
     QAction *toggleAction() const { return m_toggleAction; }
 
-    bool enabledState() const { return m_enabledCache; }
-
     /** Loads the effect into KWin if it is not already running. */
     void ensureEffectLoaded()
     {
@@ -135,6 +133,44 @@ public:
     {
         if (m_interface) {
             m_interface->asyncCall(QStringLiteral("setEnabled"), enabled);
+        }
+    }
+
+    void requestPrimaryOnly(bool primaryOnly)
+    {
+        if (m_interface) {
+            m_interface->asyncCall(QStringLiteral("setPrimaryOnly"), primaryOnly);
+            QTimer::singleShot(160, this, &VibranceController::refreshState);
+        }
+    }
+
+    /**
+     * Pulls the full current state from the effect and re-emits it as if it
+     * had changed remotely, so every slider/checkbox is truthful even if a
+     * D-Bus signal was ever missed (and on startup, before any change).
+     */
+    void refreshState()
+    {
+        if (!m_interface) {
+            return;
+        }
+        const QDBusReply<double> value = m_interface->call(QStringLiteral("vibrance"));
+        if (value.isValid()) {
+            onVibranceChanged(value.value());
+        }
+        const QDBusReply<bool> enabled = m_interface->call(QStringLiteral("enabled"));
+        if (enabled.isValid()) {
+            onEnabledChanged(enabled.value());
+        }
+        const QDBusReply<bool> primary = m_interface->call(QStringLiteral("primaryOnly"));
+        if (primary.isValid()) {
+            onPrimaryOnlyChanged(primary.value());
+        }
+        const QDBusReply<double> red = m_interface->call(QStringLiteral("redGain"));
+        const QDBusReply<double> green = m_interface->call(QStringLiteral("greenGain"));
+        const QDBusReply<double> blue = m_interface->call(QStringLiteral("blueGain"));
+        if (red.isValid() && green.isValid() && blue.isValid()) {
+            onRGBGainsChanged(red.value(), green.value(), blue.value());
         }
     }
 
@@ -218,6 +254,7 @@ Q_SIGNALS:
     void vibranceFromEffect(double value);
     void enabledFromEffect(bool enabled);
     void rgbGainsFromEffect(double red, double green, double blue);
+    void primaryOnlyFromEffect(bool primaryOnly);
 
 private Q_SLOTS:
     void onVibranceChanged(double value)
@@ -227,7 +264,6 @@ private Q_SLOTS:
 
     void onEnabledChanged(bool enabled)
     {
-        m_enabledCache = enabled;
         Q_EMIT enabledFromEffect(enabled);
     }
 
@@ -236,7 +272,12 @@ private Q_SLOTS:
         Q_EMIT rgbGainsFromEffect(red, green, blue);
     }
 
-    /** What the global hotkey runs: flip the enabled flag, keeping values. */
+    void onPrimaryOnlyChanged(bool primaryOnly)
+    {
+        Q_EMIT primaryOnlyFromEffect(primaryOnly);
+    }
+
+    /** What the global hotkey runs: an atomic, server-side flip. */
     void toggleVibrance()
     {
         if (!m_interface) {
@@ -244,7 +285,11 @@ private Q_SLOTS:
             ensureEffectLoaded();
             return;
         }
-        requestVibranceEnabled(!m_enabledCache);
+        // The effect flips its own state — no cached copy to go stale.
+        m_interface->asyncCall(QStringLiteral("toggleEnabled"));
+        // Belt and braces: re-pull state shortly after so every checkbox and
+        // the tooltip reflect reality even if the signal path misbehaves.
+        QTimer::singleShot(160, this, &VibranceController::refreshState);
     }
 
 private:
@@ -300,8 +345,14 @@ private:
                     QStringLiteral("rgbGainsChanged(double,double,double)"),
                     this,
                     SLOT(onRGBGainsChanged(double, double, double)));
+        bus.connect(QString::fromLatin1(s_vibranceService),
+                    QString::fromLatin1(s_vibrancePath),
+                    QString::fromLatin1(s_vibranceInterface),
+                    QStringLiteral("primaryOnlyChanged(bool)"),
+                    this,
+                    SLOT(onPrimaryOnlyChanged(bool)));
 
-        readInitialState();
+        refreshState();
         Q_EMIT availableChanged(true);
     }
 
@@ -329,28 +380,16 @@ private:
                        QStringLiteral("rgbGainsChanged(double,double,double)"),
                        this,
                        SLOT(onRGBGainsChanged(double, double, double)));
+        bus.disconnect(QString::fromLatin1(s_vibranceService),
+                       QString::fromLatin1(s_vibrancePath),
+                       QString::fromLatin1(s_vibranceInterface),
+                       QStringLiteral("primaryOnlyChanged(bool)"),
+                       this,
+                       SLOT(onPrimaryOnlyChanged(bool)));
         delete m_interface;
         m_interface = nullptr;
         m_lastSent = -1.0;
         Q_EMIT availableChanged(false);
-    }
-
-    void readInitialState()
-    {
-        const QDBusReply<double> value = m_interface->call(QStringLiteral("vibrance"));
-        if (value.isValid()) {
-            onVibranceChanged(value.value());
-        }
-        const QDBusReply<bool> enabled = m_interface->call(QStringLiteral("enabled"));
-        if (enabled.isValid()) {
-            onEnabledChanged(enabled.value());
-        }
-        const QDBusReply<double> red = m_interface->call(QStringLiteral("redGain"));
-        const QDBusReply<double> green = m_interface->call(QStringLiteral("greenGain"));
-        const QDBusReply<double> blue = m_interface->call(QStringLiteral("blueGain"));
-        if (red.isValid() && green.isValid() && blue.isValid()) {
-            onRGBGainsChanged(red.value(), green.value(), blue.value());
-        }
     }
 
     void onServiceRegistered(const QString &name)
@@ -380,9 +419,14 @@ private:
     QKeySequence m_toggleShortcut;
     bool m_shortcutsReady = false;
     bool m_externalsTrusted = false;
-    bool m_enabledCache = true;
     QDBusServiceWatcher m_watcher;
 };
+
+// Behaviour/settings helpers — implemented further below, used by the window.
+static bool autostartEnabled();
+static void setAutostartEnabled(bool enabled);
+static bool storedStartHidden();
+static void saveStartHidden(bool hidden);
 
 class TrayWindow : public QMainWindow
 {
@@ -548,8 +592,39 @@ public:
         connect(m_loadButton, &QPushButton::clicked, this, [controller] { controller->ensureEffectLoaded(); });
         outerLayout->addWidget(m_loadButton);
 
+        // Behaviour settings — one check per option, like Enabled.
+        auto *behaviourGroup = new QGroupBox(tr("Behaviour"), central);
+        auto *behaviourLayout = new QVBoxLayout(behaviourGroup);
+        m_startHiddenCheck = new QCheckBox(tr("Open directly to the tray on startup"), behaviourGroup);
+        m_startHiddenCheck->setChecked(storedStartHidden());
+        m_autostartCheck = new QCheckBox(tr("Start with Plasma (autostart)"), behaviourGroup);
+        m_autostartCheck->setChecked(autostartEnabled());
+        m_primaryOnlyCheck = new QCheckBox(tr("Only affect the primary monitor"), behaviourGroup);
+        behaviourLayout->addWidget(m_startHiddenCheck);
+        behaviourLayout->addWidget(m_autostartCheck);
+        behaviourLayout->addWidget(m_primaryOnlyCheck);
+        outerLayout->addWidget(behaviourGroup);
+
+        connect(m_startHiddenCheck, &QCheckBox::toggled, this, [](bool hidden) {
+            saveStartHidden(hidden);
+        });
+        connect(m_autostartCheck, &QCheckBox::toggled, this, [this](bool on) {
+            setAutostartEnabled(on);
+            Q_EMIT autostartChanged(on);
+        });
+        connect(m_primaryOnlyCheck, &QCheckBox::toggled, this, [controller, this](bool on) {
+            if (!m_updatingFromEffect) {
+                controller->requestPrimaryOnly(on);
+            }
+        });
+        connect(controller, &VibranceController::primaryOnlyFromEffect, this, [this](bool on) {
+            m_updatingFromEffect = true;
+            m_primaryOnlyCheck->setChecked(on);
+            m_updatingFromEffect = false;
+        });
+
         setCentralWidget(central);
-        resize(420, 340);
+        resize(420, 460);
 
         connect(m_slider, &QSlider::valueChanged, this, [controller, this](int percent) {
             updateValueLabel(percent);
@@ -590,6 +665,10 @@ public:
                                   : tr("The effect is not loaded in KWin."));
         m_slider->setEnabled(controller->effectAvailable());
         m_loadButton->setVisible(!controller->effectAvailable());
+
+        // Sync every control with the effect's real state now that all of
+        // our connections exist (earlier state pushes may have gone unheard).
+        controller->refreshState();
     }
 
 private:
@@ -627,12 +706,28 @@ private:
     QSlider *m_redSlider = nullptr;
     QSlider *m_greenSlider = nullptr;
     QSlider *m_blueSlider = nullptr;
+
+public:
+    void setAutostartChecked(bool on)
+    {
+        if (m_autostartCheck) {
+            m_autostartCheck->setChecked(on);
+        }
+    }
+
+Q_SIGNALS:
+    void autostartChanged(bool enabled);
+
+private:
     QLabel *m_valueLabel = nullptr;
     QLabel *m_redLabel = nullptr;
     QLabel *m_greenLabel = nullptr;
     QLabel *m_blueLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
     QCheckBox *m_enabledCheck = nullptr;
+    QCheckBox *m_startHiddenCheck = nullptr;
+    QCheckBox *m_autostartCheck = nullptr;
+    QCheckBox *m_primaryOnlyCheck = nullptr;
     QPushButton *m_loadButton = nullptr;
     QKeySequenceEdit *m_shortcutEdit = nullptr;
     QLabel *m_shortcutInfo = nullptr;
@@ -679,6 +774,22 @@ static void setAutostartEnabled(bool enabled)
     }
 }
 
+// "Open directly to the tray": when true, launching the app does not show
+// the window; the tray icon (left click) is the entry point.
+static bool storedStartHidden()
+{
+    auto config = KSharedConfig::openConfig(QStringLiteral("wayvibrancerc"));
+    return config->group(QStringLiteral("General")).readEntry("StartHidden", false);
+}
+
+static void saveStartHidden(bool hidden)
+{
+    auto config = KSharedConfig::openConfig(QStringLiteral("wayvibrancerc"));
+    KConfigGroup group(config, QStringLiteral("General"));
+    group.writeEntry("StartHidden", hidden);
+    config->sync();
+}
+
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
@@ -691,7 +802,7 @@ int main(int argc, char *argv[])
 
     KAboutData about(QStringLiteral("org.kde.wayvibrance-tray"),
                      QStringLiteral("Way Vibrance"),
-                     QStringLiteral("0.2.0"),
+                     QStringLiteral("0.3.0"),
                      QObject::tr("System-wide vibrance and per-channel RGB control for KDE Plasma on Wayland"),
                      KAboutLicense::GPL);
     about.setDesktopFileName(QStringLiteral("org.kde.wayvibrance-tray"));
@@ -714,6 +825,15 @@ int main(int argc, char *argv[])
     auto *icon = new QSystemTrayIcon(QIcon::fromTheme(QStringLiteral("preferences-desktop-color")), &app);
     auto *menu = new QMenu(&window);
 
+    auto *openAction = menu->addAction(QIcon::fromTheme(QStringLiteral("preferences-desktop-color")),
+                                       QObject::tr("Open Way Vibrance…"));
+    QObject::connect(openAction, &QAction::triggered, [&window] {
+        window.show();
+        window.raise();
+        window.activateWindow();
+    });
+
+    menu->addSeparator();
     auto *enabledAction = menu->addAction(QObject::tr("Enabled"));
     enabledAction->setCheckable(true);
     enabledAction->setChecked(true);
@@ -733,9 +853,11 @@ int main(int argc, char *argv[])
     auto *autostartAction = menu->addAction(QObject::tr("Start with Plasma"));
     autostartAction->setCheckable(true);
     autostartAction->setChecked(autostartEnabled());
-    QObject::connect(autostartAction, &QAction::toggled, [](bool enabled) {
+    QObject::connect(autostartAction, &QAction::toggled, [&window](bool enabled) {
         setAutostartEnabled(enabled);
+        window.setAutostartChecked(enabled); // keep the window checkbox in sync
     });
+    QObject::connect(&window, &TrayWindow::autostartChanged, autostartAction, &QAction::setChecked);
 
     menu->addSeparator();
     auto *quitAction = menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")), QObject::tr("Quit"));
@@ -755,8 +877,18 @@ int main(int argc, char *argv[])
     });
 
     // Match vibrance-gui's core loop: make sure the effect is in KWin's chain.
-    // When it comes up, the D-Bus handshake pushes the persisted value to the UI.
     controller.ensureEffectLoaded();
+
+    // Second full state sync once the event loop starts: by then the effect
+    // is loaded and the startup shortcut applied, and every receiver —
+    // including the tray menu actions and the tooltip — is connected.
+    QTimer::singleShot(400, &controller, &VibranceController::refreshState);
+
+    // Show the window on launch unless the user asked to open straight to
+    // the tray ("Behaviour → Open directly to the tray on startup").
+    if (!storedStartHidden()) {
+        window.show();
+    }
 
     return app.exec();
 }

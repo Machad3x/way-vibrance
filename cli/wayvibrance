@@ -63,11 +63,16 @@ case "$cmd" in
         ;;
     toggle)
         ensure_loaded
-        if [ "$(call enabled)" = "true" ]; then
-            call setEnabled false
-        else
-            call setEnabled true
-        fi
+        call toggleEnabled
+        ;;
+    primary)
+        ensure_loaded
+        case "${2:-get}" in
+            on)  call setPrimaryOnly true ;;
+            off) call setPrimaryOnly false ;;
+            get) call primaryOnly ;;
+            *)   echo "uso: wayvibrance primary {on|off|get}" >&2; exit 1 ;;
+        esac
         ;;
     rgb)
         ensure_loaded
