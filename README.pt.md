@@ -17,6 +17,15 @@ master. A solução nativa é fazer o ajuste de cor acontecer **dentro do
 compositor**, como pós-processamento — visualmente equivalente ao vibrance
 do driver.
 
+<!-- ## Capturas de tela
+
+![Janela da bandeja: slider de vibrance, ganhos RGB por canal e presets](docs/screenshots/tray.png)
+
+![Mesma tela com vibrance neutro vs. elevado](docs/screenshots/before-after.png)
+
+![CLI wayvibrance](docs/screenshots/cli.png)
+-->
+
 ## Compatibilidade de versão
 
 - O tray e a CLI conversam **puramente via D-Bus** (`org.wayvibrance` +
