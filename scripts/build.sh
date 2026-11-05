@@ -225,6 +225,12 @@ if ! ls /usr/include/kwin/effect/effect.h >/dev/null 2>&1; then
 fi
 
 echo "==> Configuring…"
+if [ -f "$BUILD_DIR/CMakeCache.txt" ] &&
+   ! grep -q "^CMAKE_HOME_DIRECTORY:INTERNAL=$PWD$" "$BUILD_DIR/CMakeCache.txt"; then
+    echo "==> $BUILD_DIR/CMakeCache.txt was generated from a different path (e.g. a container mount)." >&2
+    echo "    Use BUILD_DIR=/tmp/wayvibrance-build (or remove the stale $BUILD_DIR/) and re-run." >&2
+    exit 1
+fi
 cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX"
 
 echo "==> Building…"
