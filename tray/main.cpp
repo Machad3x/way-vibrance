@@ -723,6 +723,14 @@ public:
         updateButtons();
     }
 
+    /**
+     * Whether the rule this dialog represents already exists on the effect
+     * (edit of an existing profile) or was created by a previous Apply here.
+     * A never-applied dialog saves silently on OK instead of asking about
+     * "changes": pressing OK on a brand-new profile *is* the intent to save.
+     */
+    void setAppliedOnce(bool applied) { m_appliedOnce = applied; }
+
     /** The pattern with its kind prefix, as the effect's setAppRule takes it. */
     QString prefixedPattern() const
     {
@@ -743,16 +751,22 @@ Q_SIGNALS:
 protected:
     void done(int result) override
     {
-        if (result == Accepted && m_dirty) {
-            const QMessageBox::StandardButton answer = QMessageBox::question(
-                this, tr("Apply changes?"),
-                tr("There are unapplied changes. Apply them before closing?"),
-                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, QMessageBox::Yes);
-            if (answer == QMessageBox::Cancel) {
-                return;
-            }
-            if (answer == QMessageBox::Yes) {
+        if (result == Accepted) {
+            if (!m_appliedOnce) {
+                // Brand-new profile (nothing on the effect yet): OK means
+                // save, quietly — asking "apply changes?" would be noise.
                 emit applyRequested();
+            } else if (m_dirty) {
+                const QMessageBox::StandardButton answer = QMessageBox::question(
+                    this, tr("Apply changes?"),
+                    tr("There are unapplied changes. Apply them before closing?"),
+                    QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, QMessageBox::Yes);
+                if (answer == QMessageBox::Cancel) {
+                    return;
+                }
+                if (answer == QMessageBox::Yes) {
+                    emit applyRequested();
+                }
             }
         }
         QDialog::done(result);
@@ -823,6 +837,7 @@ private:
     QAbstractButton *m_applyButton = nullptr;
     bool m_dirty = false;
     bool m_suppressDirty = false;
+    bool m_appliedOnce = false;
 };
 
 class TrayWindow : public QMainWindow
@@ -975,6 +990,7 @@ public:
                              [&dialog, pushDialog, &lastApplied] {
                 pushDialog(dialog, lastApplied);
                 lastApplied = dialog.prefixedPattern();
+                dialog.setAppliedOnce(true);
             });
             dialog.exec();
         });
@@ -989,6 +1005,7 @@ public:
                              [&dialog, pushDialog, &lastApplied] {
                 pushDialog(dialog, lastApplied);
                 lastApplied = dialog.prefixedPattern();
+                dialog.setAppliedOnce(true);
             });
             dialog.exec();
         });
@@ -1012,11 +1029,15 @@ public:
             ProfileDialog dialog(controller->profilesFullApi(), this);
             dialog.setFields(titleKind, oldPattern.mid(titleKind ? 6 : 4), values.vibrancePercent,
                              values.redPercent, values.greenPercent, values.bluePercent, values.displayName);
+            // The rule already exists: OK with untouched fields must not
+            // re-save (there is nothing new) — only dirty edits matter here.
+            dialog.setAppliedOnce(true);
             QString lastApplied = oldPattern;
             QObject::connect(&dialog, &ProfileDialog::applyRequested, &dialog,
                              [&dialog, pushDialog, &lastApplied] {
                 pushDialog(dialog, lastApplied);
                 lastApplied = dialog.prefixedPattern();
+                dialog.setAppliedOnce(true);
             });
             dialog.exec();
         });
