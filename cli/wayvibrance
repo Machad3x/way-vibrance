@@ -1,29 +1,55 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 machadex
+#
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
 # wayvibrance - command line control for the Way Vibrance KWin effect.
-#
-# Usage:
-#   wayvibrance                    # print current value (0..2, 1 = neutral)
-#   wayvibrance 1.25               # set vibrance to 125%
-#   wayvibrance on | off           # enable/disable (keeps the value)
-#   wayvibrance toggle             # flip between on and off
-#   wayvibrance load               # make sure the effect is loaded in KWin
-#   wayvibrance rgb <r> <g> <b>    # per-channel gains (e.g. 1.2 1 0.9); 'rgb reset'
-#   wayvibrance getrgb             # print current R/G/B gains
-#   wayvibrance primary on|off|get # restrict grading to one output
-#   wayvibrance primary outputs            # list outputs ("name|desc")
-#   wayvibrance primary output <name>      # pick the output ('""' = automatic)
-#   wayvibrance primary output-get         # current selection
-#   wayvibrance app list                       # per-app profiles
-#   wayvibrance app set <pattern> <vib> [r g b] # e.g.: app set firefox 1.5 1.2 1 0.9
-#   wayvibrance app del <pattern>              # ('title:' prefix matches the caption)
-#   wayvibrance app name <pattern> <name>      # cosmetic label in the list
-#   wayvibrance app reset                      # removes all profiles
-#   wayvibrance app focused                    # app_id of the last focused window
+# Run 'wayvibrance --help' for the full usage.
 
 set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+wayvibrance - digital vibrance, per-channel RGB gains and per-app profiles
+for KDE Plasma on Wayland (talks to the KWin effect over D-Bus).
+
+Usage:
+  wayvibrance                        print current vibrance (0..2, 1 = neutral)
+  wayvibrance 1.25                   set vibrance to 125%
+  wayvibrance on | off | toggle      enable / disable / flip
+  wayvibrance load                   make sure the effect is loaded in KWin
+  wayvibrance rgb <r> <g> <b>        per-channel gains (e.g. 1.2 1 0.9)
+  wayvibrance rgb reset              back to 1 1 1
+  wayvibrance getrgb                 print current R/G/B gains
+  wayvibrance primary on|off|get     restrict grading to one output
+  wayvibrance primary outputs        list outputs ("name|manufacturer model WxH")
+  wayvibrance primary output <name>  pick the output ('""' = automatic/first)
+  wayvibrance primary output-get     current output selection
+  wayvibrance app list               per-app profiles
+  wayvibrance app set <pattern> <vib> [r g b]
+                                     add/update a profile (e.g. firefox 1.5,
+                                     or with gains: firefox 1.5 1.2 1 0.9)
+  wayvibrance app del <pattern>      remove one
+  wayvibrance app name <pattern> <name>
+                                     cosmetic label in the tray list (empty clears)
+  wayvibrance app reset              remove all profiles
+  wayvibrance app focused            app_id of the last focused window
+  wayvibrance help | --help | -h     this text
+
+App patterns are case-insensitive globs; '*' and '?' are wildcards.
+Without a prefix the pattern matches the Wayland app_id / X11 WM_CLASS;
+prefix with 'title:' to match the window caption instead. Profiles
+override the global values for matching windows only — even unfocused.
+
+Environment: QDBUS (path to a qdbus binary; auto-detected otherwise).
+USAGE
+}
+
+# Help must work without a running KWin session, so answer it before
+# touching D-Bus at all.
+case "${1:-}" in
+    -h|--help|help) usage; exit 0 ;;
+esac
 
 if [ -z "${QDBUS:-}" ]; then
     QDBUS="$(command -v qdbus6 || command -v qdbus-qt6 || command -v qdbus || echo qdbus6)"
@@ -92,7 +118,7 @@ case "$cmd" in
                 call setPrimaryOutputName "${3:-}"
                 ;;
             output-get) call primaryOutputName ;;
-            *)   echo "usage: wayvibrance primary {on|off|get|outputs|output <name>|output-get}" >&2; exit 1 ;;
+            *)   echo "usage: wayvibrance primary {on|off|get|outputs|output <name>|output-get}  (see: wayvibrance --help)" >&2; exit 1 ;;
         esac
         ;;
     rgb)
@@ -102,7 +128,7 @@ case "$cmd" in
         elif [ $# -ge 4 ]; then
             call setRGBGains "$2" "$3" "$4"
         else
-            echo "usage: wayvibrance rgb <red> <green> <blue>  (e.g. 1.2 1 0.9) or 'wayvibrance rgb reset'" >&2
+            echo "usage: wayvibrance rgb <red> <green> <blue>  (e.g. 1.2 1 0.9) or 'wayvibrance rgb reset'  (see: wayvibrance --help)" >&2
             exit 1
         fi
         ;;
@@ -123,7 +149,7 @@ case "$cmd" in
                 elif [ $# -ge 4 ]; then
                     call setAppRule "$3" "$4"
                 else
-                    echo "usage: wayvibrance app set <pattern> <vibrance> [red green blue]  (e.g. app set firefox 1.5 | app set firefox 1.5 1.2 1 0.9)" >&2
+                    echo "usage: wayvibrance app set <pattern> <vibrance> [red green blue]  (see: wayvibrance --help)" >&2
                     exit 1
                 fi
                 ;;
@@ -142,7 +168,7 @@ case "$cmd" in
                 call lastFocusedAppId
                 ;;
             *)
-                echo "usage: wayvibrance app {list|set <pattern> <vib> [r g b]|del <pattern>|name <pattern> <name>|reset|focused}" >&2
+                echo "usage: wayvibrance app {list|set|del|name|reset|focused}  (see: wayvibrance --help)" >&2
                 exit 1
                 ;;
         esac

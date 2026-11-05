@@ -1,0 +1,7 @@
+way-vibrance (@VERSION@-1) unstable; urgency=medium
+
+  * Per-app/game profiles, primary-monitor output picker, multi-distro
+    build support and prebuilt packages. See
+    https://github.com/Machad3x/way-vibrance/releases for the full notes.
+
+ -- machadex <machad3x@gmail.com>  @DATE@

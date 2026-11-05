@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 machadex
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Arch PKGBUILD — pkgver is injected from CMakeLists.txt by
+# scripts/package.sh (or kept current by the AUR git workflow).
+pkgname=way-vibrance
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Digital vibrance, per-channel RGB gains and per-app profiles for KDE Plasma on Wayland"
+arch=('x86_64')
+url="https://github.com/Machad3x/way-vibrance"
+license=('GPL2')
+depends=('kwin' 'qt6-base' 'kconfig' 'kcoreaddons' 'kdbusaddons' 'kglobalaccel')
+makedepends=('cmake' 'extra-cmake-modules' 'vulkan-headers')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
+    cmake --build build
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+}

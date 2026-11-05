@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 machadex
+# SPDX-License-Identifier: GPL-2.0-or-later
+Source: way-vibrance
+Section: kde
+Priority: optional
+Maintainer: machadex <machad3x@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake,
+ extra-cmake-modules,
+ libdrm-dev,
+ libepoxy-dev,
+ libkf6config-dev,
+ libkf6coreaddons-dev,
+ libkf6dbusaddons-dev,
+ libkf6globalaccel-dev,
+ libvulkan-dev,
+ libwayland-dev,
+ pkg-config,
+ qt6-base-dev,
+ kwin-dev,
+Standards-Version: 4.6.2
+Homepage: https://github.com/Machad3x/way-vibrance
+Rules-Requires-Root: no
+
+Package: way-vibrance
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ kwin-wayland,
+ plasma-workspace,
+Description: digital vibrance, RGB gains and per-app profiles for KDE Plasma on Wayland
+ System-wide vibrance/saturation boost, per-channel RGB gains and
+ per-application profiles for the KDE Plasma desktop on Wayland — the
+ counterpart of NVIDIA Digital Vibrance / vibrance-gui on platforms where
+ driver tools do not exist. Implemented as a KWin desktop effect with a
+ tray controller and CLI; everything runs in userspace over the session
+ D-Bus, with all state persisted to kwinrc.

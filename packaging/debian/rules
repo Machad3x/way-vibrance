@@ -1,0 +1,8 @@
+#!/usr/bin/make -f
+# SPDX-FileCopyrightText: 2026 machadex
+# SPDX-License-Identifier: GPL-2.0-or-later
+%:
+	dh $@
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
