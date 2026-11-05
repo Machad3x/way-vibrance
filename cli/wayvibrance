@@ -11,11 +11,11 @@
 #   wayvibrance toggle             # flip between on and off
 #   wayvibrance load               # make sure the effect is loaded in KWin
 #   wayvibrance app list                       # per-app profiles
-#   wayvibrance app set <padrão> <valor> [v r g b] # app set firefox 1.5 1.2 1 0.9
-#   wayvibrance app del <padrão>               # (prefixo 'title:' casa o título)
-#   wayvibrance app name <padrão> <nome>       # rótulo cosmético na lista
-#   wayvibrance app reset                      # apaga todos os perfis
-#   wayvibrance app focused                    # app_id da última janela focada
+#   wayvibrance app set <pattern> <vib> [r g b] # e.g.: app set firefox 1.5 1.2 1 0.9
+#   wayvibrance app del <pattern>              # ('title:' prefix matches the caption)
+#   wayvibrance app name <pattern> <name>      # cosmetic label in the list
+#   wayvibrance app reset                      # removes all profiles
+#   wayvibrance app focused                    # app_id of the last focused window
 
 set -euo pipefail
 
@@ -39,7 +39,7 @@ for svc in org.kde.KWin org.kde.kwin.Effects; do
 done
 
 ensure_loaded() {
-    [ -n "$EFFECTS_SVC" ] || { echo "não foi possível falar com o KWin via D-Bus" >&2; exit 1; }
+    [ -n "$EFFECTS_SVC" ] || { echo "could not reach KWin over D-Bus" >&2; exit 1; }
     if ! "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".isEffectLoaded "$EFFECT_ID" | grep -qi true; then
         "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".loadEffect "$EFFECT_ID" >/dev/null
         # give the effect a moment to register its D-Bus service
@@ -77,7 +77,7 @@ case "$cmd" in
             on)  call setPrimaryOnly true ;;
             off) call setPrimaryOnly false ;;
             get) call primaryOnly ;;
-            *)   echo "uso: wayvibrance primary {on|off|get}" >&2; exit 1 ;;
+            *)   echo "usage: wayvibrance primary {on|off|get}" >&2; exit 1 ;;
         esac
         ;;
     rgb)
@@ -87,7 +87,7 @@ case "$cmd" in
         elif [ $# -ge 4 ]; then
             call setRGBGains "$2" "$3" "$4"
         else
-            echo "uso: wayvibrance rgb <vermelho> <verde> <azul>  (ex.: 1.2 1 0.9) ou 'wayvibrance rgb reset'" >&2
+            echo "usage: wayvibrance rgb <red> <green> <blue>  (e.g. 1.2 1 0.9) or 'wayvibrance rgb reset'" >&2
             exit 1
         fi
         ;;
@@ -99,7 +99,7 @@ case "$cmd" in
         ensure_loaded
         case "${2:-list}" in
             list)
-                # cada linha vem como "app:firefox|1.5" — imprime legível
+                # each line arrives as "kind:pattern|vib[|r,g,b[|name]]" — just indent it
                 call appRules | sed -e 's/^/  /' | tr -d '\r' || true
                 ;;
             set)
@@ -108,16 +108,16 @@ case "$cmd" in
                 elif [ $# -ge 4 ]; then
                     call setAppRule "$3" "$4"
                 else
-                    echo "uso: wayvibrance app set <padrão> <vibrância> [vermelho verde azul]  (ex.: app set firefox 1.5 | app set firefox 1.5 1.2 1 0.9)" >&2
+                    echo "usage: wayvibrance app set <pattern> <vibrance> [red green blue]  (e.g. app set firefox 1.5 | app set firefox 1.5 1.2 1 0.9)" >&2
                     exit 1
                 fi
                 ;;
             del)
-                [ $# -ge 3 ] || { echo "uso: wayvibrance app del <padrão>" >&2; exit 1; }
+                [ $# -ge 3 ] || { echo "usage: wayvibrance app del <pattern>" >&2; exit 1; }
                 call removeAppRule "$3"
                 ;;
             name)
-                [ $# -ge 3 ] || { echo "uso: wayvibrance app name <padrão> <nome>  (vazio limpa)" >&2; exit 1; }
+                [ $# -ge 3 ] || { echo "usage: wayvibrance app name <pattern> <name>  (empty clears)" >&2; exit 1; }
                 call setAppRuleName "$3" "${4:-}"
                 ;;
             reset)
@@ -127,7 +127,7 @@ case "$cmd" in
                 call lastFocusedAppId
                 ;;
             *)
-                echo "uso: wayvibrance app {list|set <padrão> <vib> [r g b]|del <padrão>|name <padrão> <nome>|reset|focused}" >&2
+                echo "usage: wayvibrance app {list|set <pattern> <vib> [r g b]|del <pattern>|name <pattern> <name>|reset|focused}" >&2
                 exit 1
                 ;;
         esac
