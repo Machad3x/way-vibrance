@@ -10,6 +10,12 @@
 #   wayvibrance on | off           # enable/disable (keeps the value)
 #   wayvibrance toggle             # flip between on and off
 #   wayvibrance load               # make sure the effect is loaded in KWin
+#   wayvibrance rgb <r> <g> <b>    # per-channel gains (e.g. 1.2 1 0.9); 'rgb reset'
+#   wayvibrance getrgb             # print current R/G/B gains
+#   wayvibrance primary on|off|get # restrict grading to one output
+#   wayvibrance primary outputs            # list outputs ("name|desc")
+#   wayvibrance primary output <name>      # pick the output ('""' = automatic)
+#   wayvibrance primary output-get         # current selection
 #   wayvibrance app list                       # per-app profiles
 #   wayvibrance app set <pattern> <vib> [r g b] # e.g.: app set firefox 1.5 1.2 1 0.9
 #   wayvibrance app del <pattern>              # ('title:' prefix matches the caption)

@@ -167,7 +167,7 @@ via D-Bus.
 | Hotkey para alternar | ✅ | KGlobalAccel, tecla configurável | ✅ |
 | Afetar só um monitor | — (via perfis) | modo "monitor primário" (saída escolhida) | ✅ |
 | Perfis automáticos por app/jogo | ✅ (foco de janela) | regras por janela (`app:`/`title:` glob) — vale até sem foco | ✅ |
-| Valor próprio por monitor | ✅ | valores por saída | 🔜 |
+| Valor próprio por monitor | ✅ | — (desde a v0.5.0 o modo pode restringir a uma saída; valores independentes por saída pedem uniform/passe por saída) | 🔜 |
 | Som/OSD ao trocar perfil | ✅ | OSD layer-shell | 🔜 |
 
 ## Limitações conhecidas

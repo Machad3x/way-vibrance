@@ -6,7 +6,7 @@
             }
         ],
         "Category": "Appearance",
-        "Description": "System-wide digital vibrance and per-channel RGB gains (like NVIDIA Digital Vibrance) for KDE Plasma on Wayland",
+        "Description": "System-wide digital vibrance and per-channel RGB gains (like NVIDIA Digital Vibrance) for KDE Plasma on Wayland, with per-app profiles",
         "EnabledByDefault": false,
         "Icon": "preferences-desktop-color",
         "Id": "wayvibrance",

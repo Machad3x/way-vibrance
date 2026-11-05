@@ -162,7 +162,7 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 | Toggle hotkey | ✅ | KGlobalAccel, key configurable | ✅ |
 | Apply only to one monitor | — (profile-based) | "primary monitor" mode (picked output) | ✅ |
 | Auto per-app/game profiles | ✅ (window focus) | per-window rules (`app:`/`title:` globs) — applies even unfocused | ✅ |
-| Distinct value per monitor | ✅ | per-output uniform/scene pass | 🔜 |
+| Distinct value per monitor | ✅ | — (mode can restrict to one output since v0.5.0; independent per-output values need a per-output uniform/scene pass) | 🔜 |
 | Sound/OSD on profile switch | ✅ | layer-shell OSD | 🔜 |
 
 ## Known limitations

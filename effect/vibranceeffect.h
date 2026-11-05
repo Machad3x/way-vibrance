@@ -65,8 +65,9 @@ using WvPaintRegion = QRegion;
  *    linear space. The grab reuses the built-in saturation, so the vibrance
  *    keeps applying on this path too.
  *
- * While the values are neutral (1.0) or the effect is disabled, isActive()
- * returns false and KWin runs without touching this effect at all.
+ * While every value is neutral (1.0), no profile exists, or the effect is
+ * disabled, isActive() returns false and KWin runs without touching this
+ * effect at all.
  *
  * The values are configurable at runtime through the D-Bus service
  * "org.wayvibrance" (object path "/Vibrance", interface "org.wayvibrance")

@@ -115,6 +115,13 @@ referência: **CachyOS, Plasma 6.31, KWin 6.8.2, Qt 6.12, sessão Wayland**
 
 ### Escopo "monitor primário" (0.3)
 
+> **ATUALIZAÇÃO (0.5):** o proxy `activeScreen()` abaixo foi substituído —
+> o modo agora mira uma saída **escolhida pelo usuário** (`PrimaryOutput`
+> em kwinrc, dropdown no tray / `wayvibrance primary output <nome>`),
+> comparada por nome de conector em `effects->screens()` com cache
+> invalidado em hotplug; "automático" = primeira saída. Mantido como
+> registro histórico da pesquisa original.
+
 - A API pública de efeitos **não expõe um conceito de "saída primária"**
   (nada de `primaryScreen()` em `options.h`/`effecthandler.h` instalados).
   Proxy usado: `EffectsHandler::activeScreen()` — a saída sob o cursor —,
