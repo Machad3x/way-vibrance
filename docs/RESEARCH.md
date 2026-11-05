@@ -4,6 +4,9 @@ Notas técnicos que fundamentaram a arquitetura do Way Vibrance. Ambiente de
 referência: **CachyOS, Plasma 6.31, KWin 6.8.2, Qt 6.12, sessão Wayland**
 (`qdbus6 org.kde.KWin /KWin supportInformation`).
 
+> Projeto criado vibe-coded com auxílio de IA (OpenCode), sob revisão do
+> mantenedor — histórico completo no git.
+
 ## 1. Por que "vibrance-gui puro" é impossível no Wayland
 
 - No Windows o vibrance-gui escreve no **CTM (Color Transformation Matrix)**
