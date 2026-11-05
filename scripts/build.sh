@@ -16,6 +16,20 @@
 # For OSTree-based immutable distros (Silverblue, SteamOS…) see the note at
 # the bottom of this file.
 
+# Refuse the destructive side by default when running inside a container:
+# building is the supported flow there (see the immutable note at the
+# bottom). Set DESTDIR (proper packaging) or ALLOW_CONTAINER_INSTALL=1 to
+# install inside the image anyway.
+INSTALL=1
+if { [ -f /run/.containerenv ] || [ -f /.dockerenv ]; } \
+   && [ -z "${DESTDIR:-}" ] && [ "${ALLOW_CONTAINER_INSTALL:-0}" != 1 ] \
+   && [ "$(id -u)" -eq 0 ] && [ "${PREFIX:-/usr}" = "/usr" ]; then
+    echo "==> Running inside a container: not installing into the image's /usr (build only)." >&2
+    echo "    On the host install normally; for packaging set DESTDIR; for an" >&2
+    echo "    intentional in-image install re-run with ALLOW_CONTAINER_INSTALL=1." >&2
+    INSTALL=0
+fi
+
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -216,8 +230,10 @@ cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$P
 echo "==> Building…"
 cmake --build "$BUILD_DIR" --parallel "$(nproc)"
 
-echo "==> Installing…"
-$SUDO cmake --install "$BUILD_DIR"
+if [ "$INSTALL" = 1 ]; then
+    echo "==> Installing…"
+    $SUDO cmake --install "$BUILD_DIR"
+fi
 
 echo "==> Loading the effect into KWin…"
 QDBUS_BIN="$(command -v qdbus6 || command -v qdbus-qt6 || command -v qdbus || true)"

@@ -110,9 +110,13 @@ System tray menu:
     covers Debian and Ubuntu, alternates are tried automatically).
   - Other families: the script says so and still builds if the dev packages
     are already present.
-- Immutable distros (Silverblue/Kinoite, SteamOS…): build inside
-  `distrobox`/`podman` with the dev packages and install with
-  `PREFIX=~/.local`; user-scope effect loading is tracked on the roadmap.
+- Immutable distros (Silverblue/Kinoite…): the *build* works today inside
+  `distrobox`/`podman`, but KWin only scans system plugin directories —
+  user-scope loading (`~/.local/share/kwin/effects/plugins`,
+  `QT_PLUGIN_PATH`) was tested and does **not** work (KWin 6.3–6.8).
+  The supported path is a prebuilt RPM installed via `rpm-ostree install`
+  (roadmap). SteamOS caveat: the gamescope gaming session runs no KWin,
+  so the effect applies only to its desktop session.
 
 ## Installation
 
@@ -209,11 +213,11 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 3. HDR / wide-gamut correctness (BT.2020 aware grading).
 4. PKGBUILD (AUR-style auto-rebuild) so every KWin update recompiles the
    effect for you.
-5. First-class immutable-distro support (Silverblue/Kinoite, SteamOS):
-   user-scope install — plugin in `~/.local/share/kwin/effects/plugins`,
-   tray in `~/.local/bin` — with the packaging documented (the distro
-   plugin dir currently wins the KWin scan, so this needs a load-order
-   plan; containers/distrobox work today).
+5. Prebuilt packages for every family — RPM (incl. `rpm-ostree install`
+   for Fedora Atomic/Kinoite, the only proven way to get the effect onto
+   immutable systems: KWin ignores `~/.local` and `QT_PLUGIN_PATH` for
+   effects), DEB (Debian/Ubuntu), PKGBUILD/AUR (Arch). CI: the podman
+   matrix (arch/fedora/debian/ubuntu) already validates each build.
 
 ## Status
 

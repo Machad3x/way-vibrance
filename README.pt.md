@@ -114,10 +114,13 @@ Menu da bandeja do sistema:
     automaticamente).
   - Outras famílias: o script avisa e segue o build se os pacotes de
     desenvolvimento já estiverem presentes.
-- Distros imutáveis (Silverblue/Kinoite, SteamOS…): compile dentro de
-  `distrobox`/`podman` com os pacotes de desenvolvimento e instale com
-  `PREFIX=~/.local`; carregar o efeito a partir do escopo do usuário está no
-  roadmap.
+- Distros imutáveis (Silverblue/Kinoite…): o *build* já funciona dentro de
+  `distrobox`/`podman`, mas o KWin só varre diretórios de plugin do sistema
+  — carregamento em escopo de usuário (`~/.local/share/kwin/effects/plugins`,
+  `QT_PLUGIN_PATH`) foi testado e **não** funciona (KWin 6.3–6.8). O caminho
+  suportado é um RPM prebuilt via `rpm-ostree install` (roadmap). Nota para
+  SteamOS: a sessão de jogos gamescope não roda KWin, então o efeito só vale
+  para a sessão desktop.
 
 ## Instalação
 
@@ -216,12 +219,11 @@ via D-Bus.
 3. HDR / fidelidade em wide gamut (correção consciente de BT.2020).
 4. PKGBUILD (rebuild automático estilo AUR) para recompilar o efeito a cada
    update do KWin.
-5. Suporte de primeira classe a distros imutáveis (Silverblue/Kinoite,
-   SteamOS): instalação em escopo do usuário — plugin em
-   `~/.local/share/kwin/effects/plugins`, tray em `~/.local/bin` — com o
-   empacotamento documentado (hoje o diretório de plugins do sistema ganha a
-   varredura do KWin, então isso exige um plano de ordem de carregamento;
-   contêineres/distrobox já funcionam).
+5. Pacotes prebuilt para todas as famílias — RPM (incluindo
+   `rpm-ostree install` para Fedora Atomic/Kinoite, o único caminho que
+   funciona em imutáveis: o KWin ignora `~/.local` e `QT_PLUGIN_PATH` para
+   efeitos), DEB (Debian/Ubuntu), PKGBUILD/AUR (Arch). CI: a matriz podman
+   (arch/fedora/debian/ubuntu) já valida cada build.
 
 ## Estado
 
