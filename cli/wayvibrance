@@ -69,6 +69,21 @@ case "$cmd" in
             call setEnabled true
         fi
         ;;
+    rgb)
+        ensure_loaded
+        if [ "${2:-}" = "reset" ]; then
+            call setRGBGains 1 1 1
+        elif [ $# -ge 4 ]; then
+            call setRGBGains "$2" "$3" "$4"
+        else
+            echo "uso: wayvibrance rgb <vermelho> <verde> <azul>  (ex.: 1.2 1 0.9) ou 'wayvibrance rgb reset'" >&2
+            exit 1
+        fi
+        ;;
+    getrgb)
+        ensure_loaded
+        printf 'R=%s G=%s B=%s\n' "$(call redGain)" "$(call greenGain)" "$(call blueGain)"
+        ;;
     *)
         # positional: a numeric value, e.g. `wayvibrance 1.25`
         ensure_loaded

@@ -31,16 +31,24 @@ ao vibrance do driver.
 
 ## Como funciona
 
-- **`effect/`** — plugin C++ de *desktop effect* do KWin 6. Aplica o multiplicador
-  de saturação via `WindowPaintData::multiplySaturation()` no fim da cadeia de
-  efeitos (`chainPosition 99`). O renderizador de cena do KWin aplica isso no
-  **espaço linear** com seu shader embutido: sem grab por janela, sem passe
-  extra de framebuffer.
-  - Valor persiste em `kwinrc` (`[Effect-wayvibrance] Vibrance=…`).
+- **`effect/`** — plugin C++ de *desktop effect* do KWin 6, com dois caminhos
+  de render escolhidos por custo:
+  - **Saturação/vibrance** via `WindowPaintData::multiplySaturation()` no fim
+    da cadeia de efeitos (`chainPosition 99`): o renderizador de cena do KWin
+    aplica com seu shader embutido, no **espaço linear**, sem grab de janelas
+    e sem passe extra.
+  - **Ganhos RGB por canal** (vermelho/verde/azul independentes — como a aba
+    "Cor" do painel NVIDIA): quando algum canal ≠ 100%, as janelas passam
+    pelo caminho *offscreen* (`OffscreenEffect`) com shader GLSL próprio que
+    multiplica os canais em espaço linear. Com os três canais neutros, nada é
+    redirecionado e o custo volta a ser zero.
+  - Valor/modo persistem em `kwinrc` (`[Effect-wayvibrance]` → `Vibrance`,
+    `Enabled`, `RedGain`, `GreenGain`, `BlueGain`).
   - Controle ao vivo (sem flicker/`reconfigure`) via **D-Bus**:
     serviço `org.wayvibrance`, objeto `/Vibrance`, interface `org.wayvibrance`
-    com métodos `vibrance`, `setVibrance`, `enabled`, `setEnabled` e sinais
-    `vibranceChanged`, `enabledChanged`.
+    com métodos `vibrance`, `setVibrance`, `enabled`, `setEnabled`,
+    `redGain`/`greenGain`/`blueGain`, `setRGBGains(r,g,b)` e sinais
+    `vibranceChanged`, `enabledChanged`, `rgbGainsChanged`.
 - **`tray/`** — `wayvibrance-tray`: app de bandeja em Qt 6 (slider ao vivo
   com throttle, presets, liga/desliga, autostart) — é o "GUI" do vibrance-gui.
 - **`cli/`** — `wayvibrance`: script de terminal (`wayvibrance 1.25`,
@@ -65,15 +73,20 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 
 ## Uso
 
-- Bandeja/menu: slider 0–250%, presets (100/125/150/200%), toggle, "Start with Plasma".
-- CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get`
-- Reset rápido: valor `1.0` = neutro (efeito fica inativo, custo zero).
+- Bandeja/menu: slider 0–250%, **3 sliders de ganho por canal (R/G/B,
+  0–200%) com botão "Reset RGB"**, presets (100/125/150/200%), toggle,
+  "Start with Plasma".
+- CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
+  `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` · `wayvibrance getrgb`
+- Reset rápido: vibrância `1.0` e canais `1.0` = neutro (efeito fica
+  inativo, custo zero).
 
 ## Equivalência com o vibrance-gui
 
 | Recurso | vibrance-gui (Windows) | Way Vibrance | status |
 |---|---|---|---|
 | Boost de vibrância global | driver CTM | shader do KWin | ✅ MVP |
+| Ganhos por canal R/G/B | driver (aba Cor) | passe offscreen com GLSL | ✅ |
 | Ajuste ao vivo sem reiniciar | driver API | D-Bus `org.wayvibrance` | ✅ MVP |
 | Persistência por sessão | registro | `kwinrc` | ✅ MVP |
 | Tray + autostart | ✅ | ✅ | ✅ MVP |
@@ -88,6 +101,10 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 - **Cursor do mouse não é afetado** (é desenhado em um hardware plane
   separado no KMS), mesmo trade-off do efeito de correção de daltonismo do
   próprio KWin.
+- **Ganhos RGB ≠ 100% ativam o caminho offscreen** (grab por janela +
+  shader): um pouco mais pesado que a vibrância pura, que continua no
+  caminho de custo zero via uniform nativo. Deixe os três canais em 100%
+  para voltar ao modo leve.
 - Composição OpenGL apenas (Vulkan no roadmap).
 - O binário do plugin é casado com a versão do KWin instalado (rebuild leve
   via `scripts/build.sh` após updates grandes — sem pin de versão no código).

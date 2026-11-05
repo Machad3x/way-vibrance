@@ -10,6 +10,7 @@ add_library(wayvibrance MODULE
     main.cpp
     vibranceeffect.cpp
     vibranceeffect.h
+    wayvibrance.qrc
 )
 
 target_link_libraries(wayvibrance
@@ -17,6 +18,7 @@ target_link_libraries(wayvibrance
         Qt6::Core
         Qt6::Gui
         Qt6::DBus
+        Qt6::OpenGL
         KF6::ConfigCore
         KWin::kwin
 )

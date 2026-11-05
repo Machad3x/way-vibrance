@@ -77,13 +77,46 @@ referência: **CachyOS, Plasma 6.31, KWin 6.8.2, Qt 6.12, sessão Wayland**
   controle ao vivo sem tocar em `kwinrc`/`reconfigure` (zero flicker).
 - Sinal `windowActivated` do workspace: base para perfis por app (roadmap).
 
+## 2.5 Caminho offscreen p/ shaders próprios (API pública, verificado 6.8)
+
+- `OffscreenEffect` (header instalado `effect/offscreeneffect.h`) é o padrão
+  do próprio KWin (daltonismo): `redirect(w)` + `setShader(w, shader)` por
+  janela; **janelas não redirecionadas são encaminhadas a
+  `effects->drawWindow` normalmente** — ou seja, dá para ligar/desligar o
+  custo por estado, e a vibrância por uniform continua ativa no caminho
+  normal. O grab aplica o `WindowPaintData` (inclusive saturação) antes do
+  shader custom.
+- `ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture,
+  QString(), ":/...frag")` → `unique_ptr<GLShader>`; uniforms por nome via
+  `ShaderBinder` + `setUniform("nome", QVector3D/float/…)`. Tudo público.
+- Shaders `.frag` de plugin podem `#include "colormanagement.glsl"` (resolve
+  no qrc do próprio kwin, ligado ao processo) e usar
+  `sourceEncodingToNitsInDestinationColorspace()` /
+  `nitsToDestinationEncoding()` — ganhos RGB aplicados em espaço linear,
+  consistente com a vibrância nativa.
+- Shader gerado **lazy** (só quando canais ≠ 1.0; nunca em construtor se o
+  contexto GL não garantir), com `setUniform` imediato após criação.
+
+## 2.6 Tolerância de versão da parte C++ (sem pin numérico)
+
+- `Effect/OffscreenEffect::drawWindow`: `void`→`bool` no 6.8 e
+  `QRegion`→`Region` no 6.6 — resolvido **com uma única definição**:
+  `auto drawWindow(…) -> decltype(effects->drawWindow(…)) override`
+  (handler público evolui em lockstep com a base; `return <expr void>` é
+  válido em função `cv void`). Tipo do parâmetro de região via
+  `WvPaintRegion` chaveado por `KWIN_EFFECT_API_VERSION_MINOR >= 237`.
+- `&OffscreenEffect::drawWindow` (ponteiro-para-membro) **não** pode ser
+  usado para extrair o retorno dentro do corpo da classe derivada — GCC
+  trata como acesso protected ao tipo incompleto; a variante via objeto
+  público (`effects->`) compila.
+
 ## 3. Alternativas mapeadas e descartadas
 
 | Caminho | Veredito |
 |---|---|
 | CTM KMS direto (libdrm) | ❌ impossível no Wayland (DRM master exclusivo) |
 | Efeito JS/QML (`ShaderTrait.AdjustSaturation` scripting) | ⚠️ viável mas por-grab (texturas extras), controle ao vivo fraco (reconfigure), sem serviço D-Bus próprio |
-| `OffscreenEffect` com GLSL próprio (via kwin-daltonismo) | ⚠️ mais pesado (grab por janela) e quebra otimizações; guardado p/ modo *vibrance real* no futuro scene pass |
+| `OffscreenEffect` com GLSL próprio (via kwin-daltonismo) | ⚠️ mais pesado (grab por janela) — usado agora **apenas e de forma condicional** p/ ganhos RGB (ver §2.5); o modo *vibrance real* (pele protegida) pode movê-lo p/ scene pass no futuro |
 | `multiplySaturation` no renderer embutido | ✅ **escolhido** — linear, sem passe extra, custo zero em neutro |
 | Portar para outros compositores | ❌ fora de escopo — o projeto é **exclusivo KDE/Plasma** |
 

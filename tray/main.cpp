@@ -17,6 +17,7 @@
 #include <QDBusServiceWatcher>
 #include <QDir>
 #include <QFile>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMainWindow>
@@ -35,6 +36,8 @@ static constexpr auto s_vibranceInterface = "org.wayvibrance";
 static constexpr auto s_trayService = "org.wayvibrance.Tray";
 static constexpr int kMinPercent = 0;
 static constexpr int kMaxPercent = 250;
+static constexpr int kRgbMinPercent = 0;
+static constexpr int kRgbMaxPercent = 200;
 
 /**
  * Bridges the UI to the effect over D-Bus, coalescing slider movements so
@@ -54,6 +57,10 @@ public:
         m_timer.setSingleShot(true);
         m_timer.setInterval(40);
         connect(&m_timer, &QTimer::timeout, this, &VibranceController::flush);
+
+        m_rgbTimer.setSingleShot(true);
+        m_rgbTimer.setInterval(40);
+        connect(&m_rgbTimer, &QTimer::timeout, this, &VibranceController::flushRGB);
 
         connect(&m_watcher, &QDBusServiceWatcher::serviceRegistered,
                 this, &VibranceController::onServiceRegistered);
@@ -110,11 +117,21 @@ public:
         }
     }
 
+    void requestRGBGains(double red, double green, double blue)
+    {
+        m_pendingRed = red;
+        m_pendingGreen = green;
+        m_pendingBlue = blue;
+        m_rgbPending = true;
+        m_rgbTimer.start();
+    }
+
 Q_SIGNALS:
     void availableChanged(bool available);
     /** Emitted when the value changed remotely (effect/CLI), not by this UI. */
     void vibranceFromEffect(double value);
     void enabledFromEffect(bool enabled);
+    void rgbGainsFromEffect(double red, double green, double blue);
 
 private Q_SLOTS:
     void onVibranceChanged(double value)
@@ -127,7 +144,20 @@ private Q_SLOTS:
         Q_EMIT enabledFromEffect(enabled);
     }
 
+    void onRGBGainsChanged(double red, double green, double blue)
+    {
+        Q_EMIT rgbGainsFromEffect(red, green, blue);
+    }
+
 private:
+    void flushRGB()
+    {
+        if (!m_interface || !m_rgbPending) {
+            return;
+        }
+        m_rgbPending = false;
+        m_interface->asyncCall(QStringLiteral("setRGBGains"), m_pendingRed, m_pendingGreen, m_pendingBlue);
+    }
     void flush()
     {
         if (!m_interface || m_pendingPercent < 0) {
@@ -166,6 +196,12 @@ private:
                     QStringLiteral("enabledChanged(bool)"),
                     this,
                     SLOT(onEnabledChanged(bool)));
+        bus.connect(QString::fromLatin1(s_vibranceService),
+                    QString::fromLatin1(s_vibrancePath),
+                    QString::fromLatin1(s_vibranceInterface),
+                    QStringLiteral("rgbGainsChanged(double,double,double)"),
+                    this,
+                    SLOT(onRGBGainsChanged(double, double, double)));
 
         readInitialState();
         Q_EMIT availableChanged(true);
@@ -189,6 +225,12 @@ private:
                        QStringLiteral("enabledChanged(bool)"),
                        this,
                        SLOT(onEnabledChanged(bool)));
+        bus.disconnect(QString::fromLatin1(s_vibranceService),
+                       QString::fromLatin1(s_vibrancePath),
+                       QString::fromLatin1(s_vibranceInterface),
+                       QStringLiteral("rgbGainsChanged(double,double,double)"),
+                       this,
+                       SLOT(onRGBGainsChanged(double, double, double)));
         delete m_interface;
         m_interface = nullptr;
         m_lastSent = -1.0;
@@ -204,6 +246,12 @@ private:
         const QDBusReply<bool> enabled = m_interface->call(QStringLiteral("enabled"));
         if (enabled.isValid()) {
             onEnabledChanged(enabled.value());
+        }
+        const QDBusReply<double> red = m_interface->call(QStringLiteral("redGain"));
+        const QDBusReply<double> green = m_interface->call(QStringLiteral("greenGain"));
+        const QDBusReply<double> blue = m_interface->call(QStringLiteral("blueGain"));
+        if (red.isValid() && green.isValid() && blue.isValid()) {
+            onRGBGainsChanged(red.value(), green.value(), blue.value());
         }
     }
 
@@ -225,6 +273,11 @@ private:
     QTimer m_timer;
     int m_pendingPercent = -1;
     double m_lastSent = -1.0;
+    QTimer m_rgbTimer;
+    double m_pendingRed = 1.0;
+    double m_pendingGreen = 1.0;
+    double m_pendingBlue = 1.0;
+    bool m_rgbPending = false;
     QDBusServiceWatcher m_watcher;
 };
 
@@ -258,6 +311,53 @@ public:
         m_enabledCheck->setChecked(true);
         outerLayout->addWidget(m_enabledCheck);
 
+        // Per-channel RGB gains (like the driver's color page). Percent
+        // values map to gain multipliers (100% = neutral 1.0).
+        auto *rgbGroup = new QGroupBox(tr("Channel gains (RGB)"), central);
+        auto *rgbLayout = new QVBoxLayout(rgbGroup);
+        struct ChannelSpec
+        {
+            const char *name;
+            const char *color;
+            QSlider *TrayWindow::*member;
+            QLabel *TrayWindow::*label;
+        };
+        const ChannelSpec channels[] = {
+            {"R", "#e05555", &TrayWindow::m_redSlider, &TrayWindow::m_redLabel},
+            {"G", "#55c25a", &TrayWindow::m_greenSlider, &TrayWindow::m_greenLabel},
+            {"B", "#5b8def", &TrayWindow::m_blueSlider, &TrayWindow::m_blueLabel},
+        };
+        for (const ChannelSpec &ch : channels) {
+            auto *row = new QHBoxLayout();
+            auto *name = new QLabel(QString::fromLatin1(ch.name), rgbGroup);
+            name->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;").arg(QLatin1String(ch.color)));
+            auto *slider = new QSlider(Qt::Horizontal, rgbGroup);
+            slider->setRange(kRgbMinPercent, kMaxPercent);
+            slider->setValue(100);
+            auto *value = new QLabel(rgbGroup);
+            value->setMinimumWidth(48);
+            value->setText(QStringLiteral("100%"));
+            row->addWidget(name);
+            row->addWidget(slider);
+            row->addWidget(value);
+            rgbLayout->addLayout(row);
+            this->*(ch.member) = slider;
+            this->*(ch.label) = value;
+            connect(slider, &QSlider::valueChanged, this, [this, value](int percent) {
+                value->setText(QStringLiteral("%1%").arg(percent));
+                pushRGBGains();
+            });
+        }
+        auto *rgbReset = new QPushButton(tr("Reset RGB"), rgbGroup);
+        connect(rgbReset, &QPushButton::clicked, this, [this] {
+            setGains(100, 100, 100);
+            if (m_controller) {
+                m_controller->requestRGBGains(1.0, 1.0, 1.0);
+            }
+        });
+        rgbLayout->addWidget(rgbReset);
+        outerLayout->addWidget(rgbGroup);
+
         auto *presets = new QHBoxLayout();
         for (int percent : {100, 125, 150, 200}) {
             auto *button = new QPushButton(QStringLiteral("%1%").arg(percent), central);
@@ -277,7 +377,7 @@ public:
         outerLayout->addWidget(m_loadButton);
 
         setCentralWidget(central);
-        resize(420, 170);
+        resize(420, 340);
 
         connect(m_slider, &QSlider::valueChanged, this, [controller, this](int percent) {
             updateValueLabel(percent);
@@ -299,6 +399,11 @@ public:
             m_updatingFromEffect = true;
             m_enabledCheck->setChecked(enabled);
             m_updatingFromEffect = false;
+        });
+        connect(controller, &VibranceController::rgbGainsFromEffect, this, [this](double red, double green, double blue) {
+            m_updatingRGB = true;
+            setGains(int(red * 100.0), int(green * 100.0), int(blue * 100.0));
+            m_updatingRGB = false;
         });
         connect(controller, &VibranceController::availableChanged, this, [this](bool available) {
             m_statusLabel->setText(available ? tr("Connected to the Way Vibrance effect.")
@@ -323,6 +428,23 @@ private:
         updateValueLabel(percent);
     }
 
+    void setGains(int red, int green, int blue)
+    {
+        m_redSlider->setValue(qBound(kRgbMinPercent, red, kRgbMaxPercent));
+        m_greenSlider->setValue(qBound(kRgbMinPercent, green, kRgbMaxPercent));
+        m_blueSlider->setValue(qBound(kRgbMinPercent, blue, kRgbMaxPercent));
+    }
+
+    void pushRGBGains()
+    {
+        if (m_updatingRGB) {
+            return;
+        }
+        m_controller->requestRGBGains(m_redSlider->value() / 100.0,
+                                      m_greenSlider->value() / 100.0,
+                                      m_blueSlider->value() / 100.0);
+    }
+
     void updateValueLabel(int percent)
     {
         m_valueLabel->setText(QStringLiteral("%1%").arg(percent));
@@ -330,11 +452,18 @@ private:
 
     VibranceController *m_controller = nullptr;
     QSlider *m_slider = nullptr;
+    QSlider *m_redSlider = nullptr;
+    QSlider *m_greenSlider = nullptr;
+    QSlider *m_blueSlider = nullptr;
     QLabel *m_valueLabel = nullptr;
+    QLabel *m_redLabel = nullptr;
+    QLabel *m_greenLabel = nullptr;
+    QLabel *m_blueLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
     QCheckBox *m_enabledCheck = nullptr;
     QPushButton *m_loadButton = nullptr;
     bool m_updatingFromEffect = false;
+    bool m_updatingRGB = false;
 };
 
 static QString autostartFilePath()

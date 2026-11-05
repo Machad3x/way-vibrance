@@ -6,7 +6,7 @@
             }
         ],
         "Category": "Appearance",
-        "Description": "System-wide digital vibrance / saturation boost (like NVIDIA Digital Vibrance) for KDE Plasma on Wayland",
+        "Description": "System-wide digital vibrance and per-channel RGB gains (like NVIDIA Digital Vibrance) for KDE Plasma on Wayland",
         "EnabledByDefault": false,
         "Icon": "preferences-desktop-color",
         "Id": "wayvibrance",
@@ -15,6 +15,6 @@
         "ServiceTypes": [
             "KWin/Effect"
         ],
-        "Version": "0.1.0"
+        "Version": "0.2.0"
     }
 }

@@ -8,14 +8,20 @@
 
 #include <effect/effect.h>
 #include <effect/effecthandler.h>
+#include <effect/offscreeneffect.h>
 
 #include <QDBusAbstractAdaptor>
 #include <QRegion>
+#include <QVector3D>
+
+#include <memory>
 
 class QTimer;
 
 namespace KWin
 {
+
+class GLShader;
 
 // Version tolerance, part 1: the region parameter type of
 // Effect::drawWindow() switched from QRegion to KWin::Region with the
@@ -31,23 +37,42 @@ using WvPaintRegion = Region;
 using WvPaintRegion = QRegion;
 #endif
 
+// Version tolerance, part 2: Effect::drawWindow() gained a bool return
+// value in KWin 6.8 (void on 6.0–6.7). Rather than guessing versions, the
+// override below declares its return type as
+// decltype(effects->drawWindow(…)) — EffectsHandler::drawWindow evolves in
+// lockstep with the effect base (void+QRegion ≤6.5, void+Region 6.6/6.7,
+// bool+Region 6.8+) and is public, so one definition compiles on 6.x with
+// zero preprocessor version games.
+
 /**
- * A desktop effect that applies a saturation/vibrance boost to every window
- * being composited, the Wayland equivalent of NVIDIA Digital Vibrance or
- * AMD's Saturation setting on Windows.
+ * A desktop effect that applies a saturation/vibrance boost and per-channel
+ * RGB gains to every window being composited — the Wayland equivalent of
+ * NVIDIA's Digital Vibrance plus the per-channel color controls of the
+ * driver panels.
  *
- * The boost is applied through WindowPaintData::multiplySaturation(), which
- * KWin's scene renderer handles with its built-in shader, in linear color
- * space, without grabbing windows into extra textures or adding a separate
- * fullscreen pass.
+ * Two rendering paths, chosen by cost:
  *
- * The value is configurable at runtime through the D-Bus service
+ *  - Vibrance only (RGB gains neutral): the multiplier is handed to
+ *    WindowPaintData::multiplySaturation(), which KWin's scene renderer
+ *    applies with its built-in shader, in linear color space, without
+ *    grabbing windows or adding any pass.
+ *
+ *  - RGB gains active: windows are additionally redirected through
+ *    OffscreenEffect with a custom shader that multiplies the channels in
+ *    linear space. The grab reuses the built-in saturation, so the vibrance
+ *    keeps applying on this path too.
+ *
+ * While the values are neutral (1.0) or the effect is disabled, isActive()
+ * returns false and KWin runs without touching this effect at all.
+ *
+ * The values are configurable at runtime through the D-Bus service
  * "org.wayvibrance" (object path "/Vibrance", interface "org.wayvibrance")
- * and persisted to kwinrc, so it is restored on every session.
+ * and persisted to kwinrc, so they are restored on every session.
  *
  * \sa WayVibranceAdaptor
  */
-class VibranceEffect : public Effect
+class VibranceEffect : public OffscreenEffect
 {
     Q_OBJECT
 
@@ -60,10 +85,6 @@ public:
     bool isActive() const override;
     void reconfigure(ReconfigureFlags flags) override;
 
-    // Version tolerance, part 2: drawWindow() gained a bool return value in
-    // KWin 6.8. The trailing return type below *derives* from the base
-    // call — void on 6.0–6.7, bool on 6.8+ — and `return <void expr>` is
-    // valid in a void function, so one definition compiles on every 6.x.
     auto drawWindow(const RenderTarget &renderTarget,
                     const RenderViewport &viewport,
                     EffectWindow *w,
@@ -89,25 +110,46 @@ public:
 
     /**
      * When disabled the effect stays loaded but behaves as neutral, keeping
-     * the configured vibrance value for when it is turned back on.
+     * the configured values for when it is turned back on.
      */
     void setVibranceEnabled(bool enabled);
     bool vibranceEnabled() const;
 
+    /**
+     * Sets per-channel RGB gain multipliers (0 = black, 1 = unchanged,
+     * >1 = boosted, clipping like the driver does). Clamped to [0, 4],
+     * persisted to kwinrc. While any channel differs from 1.0, windows are
+     * redirected through the offscreen shader path.
+     */
+    void setRGBGains(qreal red, qreal green, qreal blue);
+    qreal redGain() const;
+    qreal greenGain() const;
+    qreal blueGain() const;
+
 Q_SIGNALS:
     void vibranceChanged(qreal value);
     void enabledChanged(bool enabled);
+    void rgbGainsChanged(qreal red, qreal green, qreal blue);
 
 private Q_SLOTS:
     void persist();
+    void onWindowAdded(KWin::EffectWindow *w);
 
 private:
     void reloadConfig();
+    bool rgbGainsActive() const;
+    void ensureShader();
+    void updateShaderUniforms();
+    void updateRedirects();
 
     qreal m_vibrance = 1.25;
     bool m_enabled = true;
+    QVector3D m_rgbGains{1.0f, 1.0f, 1.0f};
+    bool m_redirecting = false;
+    bool m_shaderFailed = false;
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;
+    std::unique_ptr<GLShader> m_shader;
 };
 
 /**
@@ -118,7 +160,8 @@ private:
  * Interface: org.wayvibrance
  *
  * Methods: vibrance() -> d ; setVibrance(d) ; enabled() -> b ; setEnabled(b)
- * Signals: vibranceChanged(d) ; enabledChanged(b)
+ *          redGain()/greenGain()/blueGain() -> d ; setRGBGains(d, d, d)
+ * Signals: vibranceChanged(d) ; enabledChanged(b) ; rgbGainsChanged(d, d, d)
  */
 class WayVibranceAdaptor : public QDBusAbstractAdaptor
 {
@@ -133,10 +176,15 @@ public Q_SLOTS:
     void setVibrance(qreal value);
     bool enabled() const;
     void setEnabled(bool enabled);
+    qreal redGain() const;
+    qreal greenGain() const;
+    qreal blueGain() const;
+    void setRGBGains(qreal red, qreal green, qreal blue);
 
 Q_SIGNALS:
     void vibranceChanged(qreal value);
     void enabledChanged(bool enabled);
+    void rgbGainsChanged(qreal red, qreal green, qreal blue);
 
 private:
     VibranceEffect *m_effect;
