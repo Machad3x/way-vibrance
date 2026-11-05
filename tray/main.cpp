@@ -201,6 +201,8 @@ public:
     {
         if (m_interface) {
             m_interface->asyncCall(QStringLiteral("setAppRule"), prefixedPattern, vibrance);
+            // Do not depend on the echo alone: pull the authoritative state.
+            QTimer::singleShot(120, this, &VibranceController::refreshState);
         }
     }
 
@@ -208,6 +210,7 @@ public:
     {
         if (m_interface) {
             m_interface->asyncCall(QStringLiteral("removeAppRule"), prefixedPattern);
+            QTimer::singleShot(120, this, &VibranceController::refreshState);
         }
     }
 
@@ -300,6 +303,33 @@ Q_SIGNALS:
     void profilesSupportChanged(bool supported);
 
 private Q_SLOTS:
+    /**
+     * Single catch-all D-Bus signal receiver (see attachInterface): Qt's
+     * typed string-based bus.connect() silently receives nothing with this
+     * Qt/dbus-broker combination, while the generic QDBusMessage form does
+     * deliver. So we subscribe once and fan out here.
+     */
+    void onSignal(const QDBusMessage &msg)
+    {
+        if (msg.interface() != QLatin1String(s_vibranceInterface)
+            || msg.path() != QLatin1String(s_vibrancePath)) {
+            return;
+        }
+        const QList<QVariant> args = msg.arguments();
+        const QString member = msg.member();
+        if (member == QLatin1String("vibranceChanged") && args.size() == 1) {
+            onVibranceChanged(args.at(0).toDouble());
+        } else if (member == QLatin1String("enabledChanged") && args.size() == 1) {
+            onEnabledChanged(args.at(0).toBool());
+        } else if (member == QLatin1String("rgbGainsChanged") && args.size() == 3) {
+            onRGBGainsChanged(args.at(0).toDouble(), args.at(1).toDouble(), args.at(2).toDouble());
+        } else if (member == QLatin1String("primaryOnlyChanged") && args.size() == 1) {
+            onPrimaryOnlyChanged(args.at(0).toBool());
+        } else if (member == QLatin1String("appRulesChanged") && args.size() == 1) {
+            onAppRulesChanged(args.at(0).toStringList());
+        }
+    }
+
     void onVibranceChanged(double value)
     {
         Q_EMIT vibranceFromEffect(value);
@@ -384,36 +414,18 @@ private:
                                          this);
 
         auto bus = QDBusConnection::sessionBus();
-        bus.connect(QString::fromLatin1(s_vibranceService),
+        // One generic subscription instead of five typed ones: with this
+        // Qt/dbus-broker pair the typed string-based connects never deliver
+        // (they register fine, then silently drop), while the empty-member
+        // QDBusMessage form works and stays version-proof for new signals.
+        // The empty service means "any sender" — path+interface already pin
+        // it to our effect.
+        bus.connect(QString(),
                     QString::fromLatin1(s_vibrancePath),
                     QString::fromLatin1(s_vibranceInterface),
-                    QStringLiteral("vibranceChanged(double)"),
+                    QString(),
                     this,
-                    SLOT(onVibranceChanged(double)));
-        bus.connect(QString::fromLatin1(s_vibranceService),
-                    QString::fromLatin1(s_vibrancePath),
-                    QString::fromLatin1(s_vibranceInterface),
-                    QStringLiteral("enabledChanged(bool)"),
-                    this,
-                    SLOT(onEnabledChanged(bool)));
-        bus.connect(QString::fromLatin1(s_vibranceService),
-                    QString::fromLatin1(s_vibrancePath),
-                    QString::fromLatin1(s_vibranceInterface),
-                    QStringLiteral("rgbGainsChanged(double,double,double)"),
-                    this,
-                    SLOT(onRGBGainsChanged(double, double, double)));
-        bus.connect(QString::fromLatin1(s_vibranceService),
-                    QString::fromLatin1(s_vibrancePath),
-                    QString::fromLatin1(s_vibranceInterface),
-                    QStringLiteral("primaryOnlyChanged(bool)"),
-                    this,
-                    SLOT(onPrimaryOnlyChanged(bool)));
-        bus.connect(QString::fromLatin1(s_vibranceService),
-                    QString::fromLatin1(s_vibrancePath),
-                    QString::fromLatin1(s_vibranceInterface),
-                    QStringLiteral("appRulesChanged(QStringList)"),
-                    this,
-                    SLOT(onAppRulesChanged(QStringList)));
+                    SLOT(onSignal(QDBusMessage)));
 
         refreshState();
         Q_EMIT availableChanged(true);
@@ -425,36 +437,12 @@ private:
             return;
         }
         auto bus = QDBusConnection::sessionBus();
-        bus.disconnect(QString::fromLatin1(s_vibranceService),
+        bus.disconnect(QString(),
                        QString::fromLatin1(s_vibrancePath),
                        QString::fromLatin1(s_vibranceInterface),
-                       QStringLiteral("vibranceChanged(double)"),
+                       QString(),
                        this,
-                       SLOT(onVibranceChanged(double)));
-        bus.disconnect(QString::fromLatin1(s_vibranceService),
-                       QString::fromLatin1(s_vibrancePath),
-                       QString::fromLatin1(s_vibranceInterface),
-                       QStringLiteral("enabledChanged(bool)"),
-                       this,
-                       SLOT(onEnabledChanged(bool)));
-        bus.disconnect(QString::fromLatin1(s_vibranceService),
-                       QString::fromLatin1(s_vibrancePath),
-                       QString::fromLatin1(s_vibranceInterface),
-                       QStringLiteral("rgbGainsChanged(double,double,double)"),
-                       this,
-                       SLOT(onRGBGainsChanged(double, double, double)));
-        bus.disconnect(QString::fromLatin1(s_vibranceService),
-                       QString::fromLatin1(s_vibrancePath),
-                       QString::fromLatin1(s_vibranceInterface),
-                       QStringLiteral("primaryOnlyChanged(bool)"),
-                       this,
-                       SLOT(onPrimaryOnlyChanged(bool)));
-        bus.disconnect(QString::fromLatin1(s_vibranceService),
-                       QString::fromLatin1(s_vibrancePath),
-                       QString::fromLatin1(s_vibranceInterface),
-                       QStringLiteral("appRulesChanged(QStringList)"),
-                       this,
-                       SLOT(onAppRulesChanged(QStringList)));
+                       SLOT(onSignal(QDBusMessage)));
         delete m_interface;
         m_interface = nullptr;
         m_lastSent = -1.0;
