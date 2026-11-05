@@ -655,7 +655,7 @@ public:
 
         // Quick values, same set as the global presets row.
         auto *presetRow = new QHBoxLayout();
-        for (int percent : {100, 125, 150, 200}) {
+        for (int percent : {50, 100, 125, 150, 200}) {
             auto *presetButton = new QPushButton(QStringLiteral("%1%").arg(percent), this);
             connect(presetButton, &QPushButton::clicked, this, [this, percent] {
                 m_vibSlider->setValue(percent); // the valueChanged path marks dirty and refreshes the label
@@ -927,7 +927,7 @@ public:
         outerLayout->addWidget(rgbGroup);
 
         auto *presets = new QHBoxLayout();
-        for (int percent : {100, 125, 150, 200}) {
+        for (int percent : {50, 100, 125, 150, 200}) {
             auto *button = new QPushButton(QStringLiteral("%1%").arg(percent), central);
             connect(button, &QPushButton::clicked, this, [this, percent] {
                 setPercent(percent);
@@ -1449,7 +1449,7 @@ int main(int argc, char *argv[])
     QObject::connect(&controller, &VibranceController::enabledFromEffect, enabledAction, &QAction::setChecked);
 
     menu->addSeparator();
-    for (int percent : {100, 125, 150, 200}) {
+    for (int percent : {50, 100, 125, 150, 200}) {
         auto *action = menu->addAction(QObject::tr("Set %1%").arg(percent));
         QObject::connect(action, &QAction::triggered, &controller, [percent, &controller] {
             controller.ensureEffectLoaded();

@@ -104,7 +104,7 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 ## Usage
 
 - Tray/window: vibrance slider 0–200%, **three per-channel gain sliders
-  (R/G/B, 0–200%) with "Reset RGB"**, presets (100/125/150/200%), enable
+  (R/G/B, 0–200%) with "Reset RGB"**, presets (50/100/125/150/200%), enable
   toggle.
 - **Per-app profiles** (tray group *Per-app profiles*): each profile pairs a
   glob with a vibrance value and optional R/G/B gains — `app:` patterns (the
@@ -149,7 +149,7 @@ Way Vibrance*, or simply let the tray load it via D-Bus.
 | Live adjustment | driver API | D-Bus `org.wayvibrance` | ✅ |
 | Persistence | registry | `kwinrc` | ✅ |
 | Tray + autostart | ✅ | ✅ | ✅ |
-| Presets | profiles | 100/125/150/200% | ✅ |
+| Presets | profiles | 50/100/125/150/200% | ✅ |
 | Toggle hotkey | ✅ | KGlobalAccel, key configurable | ✅ |
 | Apply only to one monitor | — (profile-based) | "primary monitor" mode (active screen) | ✅ |
 | Auto per-app/game profiles | ✅ (window focus) | per-window rules (`app:`/`title:` globs) — applies even unfocused | ✅ |

@@ -108,7 +108,7 @@ via D-Bus.
 ## Uso
 
 - Bandeja/janela: slider de vibrância 0–200%, **3 sliders de ganho por canal
-  (R/G/B, 0–200%) com "Reset RGB"**, presets (100/125/150/200%),
+  (R/G/B, 0–200%) com "Reset RGB"**, presets (50/100/125/150/200%),
   liga/desliga.
 - **Perfis por aplicação/jogo** (grupo *Per-app profiles* na janela): cada
   perfil combina um glob com um valor de vibrância e ganhos R/G/B opcionais —
@@ -153,7 +153,7 @@ via D-Bus.
 | Ajuste ao vivo | driver API | D-Bus `org.wayvibrance` | ✅ |
 | Persistência | registro | `kwinrc` | ✅ |
 | Bandeja + autostart | ✅ | ✅ | ✅ |
-| Presets | perfis | 100/125/150/200% | ✅ |
+| Presets | perfis | 50/100/125/150/200% | ✅ |
 | Hotkey para alternar | ✅ | KGlobalAccel, tecla configurável | ✅ |
 | Afetar só um monitor | — (via perfis) | modo "monitor primário" (tela ativa) | ✅ |
 | Perfis automáticos por app/jogo | ✅ (foco de janela) | regras por janela (`app:`/`title:` glob) — vale até sem foco | ✅ |
