@@ -40,8 +40,11 @@ VibranceEffect::VibranceEffect()
     QDBusConnection bus = QDBusConnection::sessionBus();
     m_dbusRegistered = bus.registerService(QString::fromLatin1(s_dbusServiceName));
     if (m_dbusRegistered) {
-        // Owns a single instance of the adaptor: when KWin unloads the effect
+        // ExportAdaptors only exports QDBusAbstractAdaptor instances already
+        // attached to the object, so the adaptor must be created *before*
+        // registerObject(). It is parented here: when KWin unloads the effect
         // the adaptor dies with it and the next instance can re-register.
+        new WayVibranceAdaptor(this);
         m_dbusRegistered = bus.registerObject(QString::fromLatin1(s_dbusObjectPath),
                                               this,
                                               QDBusConnection::ExportAdaptors);
