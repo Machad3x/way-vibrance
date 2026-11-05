@@ -4,12 +4,30 @@
 [vibrance-gui](https://github.com/x64christ/Vibrance-GU) /
 [VibranceGUI](https://vibrancegui.com) do Windows, onde as ferramentas de
 driver (NVIDIA Digital Vibrance / AMD Saturation) não existem.
+Funciona em qualquer sessão Wayland do **KDE Plasma 6**: o projeto usa
+apenas a API pública e documentada de efeitos do KWin, sem depender de uma
+versão específica do Plasma.
 
 No Wayland nenhum aplicativo de usuário pode escrever no CTM (Color
 Transformation Matrix) do display: o compositor (KWin) é o único dono do DRM
 master. A solução nativa é fazer o ajuste de cor acontecer **dentro do
 compositor**, como um efeito de pós-processamento — visualmente equivalente
 ao vibrance do driver.
+
+## Compatibilidade de versão
+
+- O `wayvibrance-tray` e o `wayvibrance` (CLI) conversam apenas com D-Bus
+  (`org.wayvibrance` próprio + `org.kde.kwin.Effects`), que é estável em todo
+  Plasma 6 — **não dependem de versão nenhuma do KDE**.
+- O plugin do efeito é compilado **contra o KWin instalado na sua máquina**.
+  Essa é a regra do gênero (a API de efeitos do KWin não garante
+  compatibilidade binária entre versões), e é justamente o que dá a
+  portabilidade de *fonte*: o mesmo código compila em qualquer KWin 6.x
+  (6.0 → 6.9-git) que exponha `WindowPaintData::multiplySaturation`,
+  adaptando automaticamente as variações de assinatura do `drawWindow`
+  (`QRegion`→`Region` no 6.6, `void`→`bool` no 6.8) — sem pin de versão.
+  Em atualizações grandes do Plasma, basta rodar `scripts/build.sh` de novo
+  — nada além disso.
 
 ## Como funciona
 
@@ -30,9 +48,8 @@ ao vibrance do driver.
 
 ## Requisitos
 
-- KDE Plasma 6 com KWin ≥ 6.2 (testado em **6.8.2**), sessão **Wayland**,
-  composição OpenGL.
-- Para compilar: Arch/CachyOS → `scripts/build.sh` instala tudo
+- **KDE Plasma 6** (KWin 6.0 ou mais novo) em sessão **Wayland**, composição OpenGL.
+- Para compilar (Arch/CachyOS): `scripts/build.sh` instala tudo
   (`base-devel cmake extra-cmake-modules kwin qt6-base kconfig vulkan-headers`).
 
 ## Instalação
@@ -68,12 +85,12 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
 
 ## Limitações conhecidas
 
-- **Cursor do mouse não é afetado** (é um hardware plane à parte no KMS).
-  Hyprland (`decoration:saturation`) e o efeito de daltonismo do próprio KWin
-  têm a mesma limitação. No driver NVIDIA isso também pode variar.
-- Composição OpenGL apenas (Vulkan no roadmap — API pública ainda limitada).
-- Plugin compilado exige a **mesma versão do KWin** (API de efeitos do KWin
-  não tem garantia binária; o CI/pacote deve ser rebuildado a cada update).
+- **Cursor do mouse não é afetado** (é desenhado em um hardware plane
+  separado no KMS), mesmo trade-off do efeito de correção de daltonismo do
+  próprio KWin.
+- Composição OpenGL apenas (Vulkan no roadmap).
+- O binário do plugin é casado com a versão do KWin instalado (rebuild leve
+  via `scripts/build.sh` após updates grandes — sem pin de versão no código).
 - Com efeito ativo, janelas em fullscreen exclusivo podem perder o
   *direct scanout* no compositor (leve custo de latência; medir).
 
@@ -87,8 +104,9 @@ Appearance → Way Vibrance*, ou deixe o tray carregá-lo sozinho via D-Bus.
    [libvibrant](https://github.com/libvibrant/vibrant-cli)) como modo
    opcional, via shader GLSL próprio em scene pass.
 4. Controle por saída/monitor + HDR (respeitar space linear em BT.2020).
-5. Explorar portabilidade para wlroots (Hyprland já tem nativo; KWin é o
-   foco primeiro).
+5. PKGBUILD (modelo AUR `-git`/`-bin` com rebuild) para que cada atualização
+   do KWin no seu distro recompile o efeito automaticamente — o mecanismo
+   padrão de manter compatibilidade com todo Plasma 6.x.
 
 ## Estado
 

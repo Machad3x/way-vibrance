@@ -13,6 +13,7 @@
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
+#include <QDBusReply>
 #include <QDBusServiceWatcher>
 #include <QDir>
 #include <QFile>
@@ -61,7 +62,9 @@ public:
 
         // The effect may already be running (loaded by a previous session's
         // configuration); connect to it right away.
-        if (QDBusConnection::sessionBus().interface()->serviceIsAvailable(QLatin1String(s_vibranceService))) {
+        const QDBusReply<bool> registered =
+            QDBusConnection::sessionBus().interface()->isServiceRegistered(QLatin1String(s_vibranceService));
+        if (registered.isValid() && registered.value()) {
             attachInterface();
         }
     }
@@ -77,11 +80,14 @@ public:
         if (!effects.isValid()) {
             return;
         }
-        const auto loaded = effects.call(QStringLiteral("isEffectLoaded"), QString::fromLatin1(s_effectId));
-        if (loaded.isValid() && loaded.arguments().value(0).toBool()) {
+        const QDBusReply<bool> loaded = effects.call(QStringLiteral("isEffectLoaded"),
+                                                     QString::fromLatin1(s_effectId));
+        if (loaded.isValid() && loaded.value()) {
             return;
         }
-        effects.callWithArgument1(QDBus::NoBlock, QStringLiteral("loadEffect"), QString::fromLatin1(s_effectId));
+        // Fire-and-forget: when the effect comes up it registers
+        // org.wayvibrance and the service watcher attaches to it.
+        effects.asyncCall(QStringLiteral("loadEffect"), QString::fromLatin1(s_effectId));
     }
 
     void requestVibrancePercent(int percent)
@@ -93,7 +99,7 @@ public:
     void requestVibranceEnabled(bool enabled)
     {
         if (m_interface) {
-            m_interface->callWithArgument1(QDBus::NoBlock, QStringLiteral("setEnabled"), enabled);
+            m_interface->asyncCall(QStringLiteral("setEnabled"), enabled);
         }
     }
 
@@ -126,7 +132,7 @@ private:
             return;
         }
         m_lastSent = value;
-        m_interface->callWithArgument1(QDBus::NoBlock, QStringLiteral("setVibrance"), value);
+        m_interface->asyncCall(QStringLiteral("setVibrance"), value);
     }
 
     void attachInterface()
@@ -163,12 +169,19 @@ private:
         if (!m_interface) {
             return;
         }
-        QDBusConnection::sessionBus().disconnect(QString::fromLatin1(s_vibranceService),
-                                                 QString::fromLatin1(s_vibrancePath),
-                                                 QString::fromLatin1(s_vibranceInterface),
-                                                 QString(),
-                                                 this,
-                                                 QString());
+        auto bus = QDBusConnection::sessionBus();
+        bus.disconnect(QString::fromLatin1(s_vibranceService),
+                       QString::fromLatin1(s_vibrancePath),
+                       QString::fromLatin1(s_vibranceInterface),
+                       QStringLiteral("vibranceChanged(double)"),
+                       this,
+                       SLOT(onVibranceChanged(double)));
+        bus.disconnect(QString::fromLatin1(s_vibranceService),
+                       QString::fromLatin1(s_vibrancePath),
+                       QString::fromLatin1(s_vibranceInterface),
+                       QStringLiteral("enabledChanged(bool)"),
+                       this,
+                       SLOT(onEnabledChanged(bool)));
         delete m_interface;
         m_interface = nullptr;
         m_lastSent = -1.0;
@@ -177,13 +190,13 @@ private:
 
     void readInitialState()
     {
-        const auto value = m_interface->call(QStringLiteral("vibrance"));
-        if (!value.isError()) {
-            onVibranceChanged(value.arguments().value(0).toDouble());
+        const QDBusReply<double> value = m_interface->call(QStringLiteral("vibrance"));
+        if (value.isValid()) {
+            onVibranceChanged(value.value());
         }
-        const auto enabled = m_interface->call(QStringLiteral("enabled"));
-        if (!enabled.isError()) {
-            onEnabledChanged(enabled.arguments().value(0).toBool());
+        const QDBusReply<bool> enabled = m_interface->call(QStringLiteral("enabled"));
+        if (enabled.isValid()) {
+            onEnabledChanged(enabled.value());
         }
     }
 
@@ -363,7 +376,7 @@ int main(int argc, char *argv[])
     TrayWindow window(&controller);
 
     auto *icon = new QSystemTrayIcon(QIcon::fromTheme(QStringLiteral("preferences-desktop-color")), &app);
-    auto *menu = new QMenu(icon);
+    auto *menu = new QMenu(&window);
 
     auto *enabledAction = menu->addAction(QObject::tr("Enabled"));
     enabledAction->setCheckable(true);

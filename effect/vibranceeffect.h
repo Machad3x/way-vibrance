@@ -10,11 +10,26 @@
 #include <effect/effecthandler.h>
 
 #include <QDBusAbstractAdaptor>
+#include <QRegion>
 
 class QTimer;
 
 namespace KWin
 {
+
+// Version tolerance, part 1: the region parameter type of
+// Effect::drawWindow() switched from QRegion to KWin::Region with the
+// scene-renderer rework (KWin 6.6, effects API 0.237). We key on the API
+// macro the headers themselves define — never on a distro/version guess —
+// so the same source compiles on KWin 6.0 through 6.9+ unchanged.
+#if !defined(KWIN_EFFECT_API_VERSION_MINOR) || KWIN_EFFECT_API_VERSION_MINOR < 236
+#error "way-vibrance requires the KWin 6 effects API (KWin >= 6.0)"
+#endif
+#if KWIN_EFFECT_API_VERSION_MINOR >= 237
+using WvPaintRegion = Region;
+#else
+using WvPaintRegion = QRegion;
+#endif
 
 /**
  * A desktop effect that applies a saturation/vibrance boost to every window
@@ -44,12 +59,18 @@ public:
 
     bool isActive() const override;
     void reconfigure(ReconfigureFlags flags) override;
-    bool drawWindow(const RenderTarget &renderTarget,
+
+    // Version tolerance, part 2: drawWindow() gained a bool return value in
+    // KWin 6.8. The trailing return type below *derives* from the base
+    // call — void on 6.0–6.7, bool on 6.8+ — and `return <void expr>` is
+    // valid in a void function, so one definition compiles on every 6.x.
+    auto drawWindow(const RenderTarget &renderTarget,
                     const RenderViewport &viewport,
                     EffectWindow *w,
                     int mask,
-                    const Region &region,
-                    WindowPaintData &data) override;
+                    const WvPaintRegion &region,
+                    WindowPaintData &data)
+        -> decltype(effects->drawWindow(renderTarget, viewport, w, mask, region, data)) override;
 
     int requestedEffectChainPosition() const override
     {

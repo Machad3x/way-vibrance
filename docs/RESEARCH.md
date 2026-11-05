@@ -62,8 +62,8 @@ referência: **CachyOS, Plasma 6.31, KWin 6.8.2, Qt 6.12, sessão Wayland**
 - `isActive()` falso (valor 1.0 ou desligado) → fora da cadeia: **custo zero**
   quando neutro.
 - Limitação herdada: janela a janela → o **cursor** (hardware plane) não é
-  afetado. Mesmo trade-off do Hyprland `decoration:saturation` e do efeito
-  daltonismo do KWin.
+  afetado. Mesmo trade-off do efeito de daltonismo (`colorblindnesscorrection`)
+  do próprio KWin.
 
 ### D-Bus
 
@@ -83,9 +83,44 @@ referência: **CachyOS, Plasma 6.31, KWin 6.8.2, Qt 6.12, sessão Wayland**
 |---|---|
 | CTM KMS direto (libdrm) | ❌ impossível no Wayland (DRM master exclusivo) |
 | Efeito JS/QML (`ShaderTrait.AdjustSaturation` scripting) | ⚠️ viável mas por-grab (texturas extras), controle ao vivo fraco (reconfigure), sem serviço D-Bus próprio |
-| `OffscreenEffect` com GLSL próprio (via Garward/kwin-daltonismo) | ⚠️ mais pesado (grab por janela) e quebra otimizações; guardado p/ modo *vibrance real* no futuro scene pass |
+| `OffscreenEffect` com GLSL próprio (via kwin-daltonismo) | ⚠️ mais pesado (grab por janela) e quebra otimizações; guardado p/ modo *vibrance real* no futuro scene pass |
 | `multiplySaturation` no renderer embutido | ✅ **escolhido** — linear, sem passe extra, custo zero em neutro |
-| Portar para outros compositores | Hyprland já tem nativo; wlroots em geral precisa de patch — fora de escopo (pedido: foco KDE) |
+| Portar para outros compositores | ❌ fora de escopo — o projeto é **exclusivo KDE/Plasma** |
+
+## 3.1 Estratégia de compatibilidade de versão (requisito do projeto)
+
+- **Nenhum número de versão do Plasma/KWin é fixado em código.** O único
+  gate é comportamental: `supported()` checa composição OpenGL em runtime, e
+  um `#error` de piso exige apenas `KWIN_EFFECT_API_VERSION_MINOR >= 236`
+  (o que a API expõe desde o KWin 6.0).
+- Tray e CLI usam **somente D-Bus** (`org.wayvibrance`,
+  `org.kde.kwin.Effects`) — estáveis em todo Plasma 6, zero pin.
+- O plugin é compilado contra o KWin instalado (`find_package(KWin REQUIRED)`
+  sem teto de versão). A API pública usada
+  (`WindowPaintData::multiplySaturation`, `drawWindow`,
+  `KWIN_EFFECT_FACTORY_SUPPORTED`, `requestedEffectChainPosition`) existe
+  desde o KWin 6.0 e não evolui de forma destrutiva dentro do Plasma 6 —
+  rebuild via `scripts/build.sh` é o único passo necessário após updates.
+
+### Mapeamento das assinaturas de `drawWindow` (verificado no fonte, por release)
+
+| KWin | effects API minor | 5º parâmetro | retorno |
+|---|---|---|---|
+| 6.0 – 6.5 | 236 | `QRegion` | `void` |
+| 6.6 – 6.7 | 237 | `KWin::Region` | `void` |
+| 6.8 | 237 | `KWin::Region` | `bool` |
+| master (6.9-git) | 237 | `KWin::Region` | `bool` |
+
+O efeito absorve as duas mudanças sem pin de versão:
+
+- **Tipo de região**: `using WvPaintRegion = Region` quando
+  `KWIN_EFFECT_API_VERSION_MINOR >= 237`, senão `QRegion` (chaveia pela macro
+  que o próprio header define, não por palpite de release).
+- **Tipo de retorno**: assinatura declarada como
+  `auto drawWindow(...) -> decltype(effects->drawWindow(...))`. O tipo
+  derivado é `void` em 6.0–6.7 e `bool` em 6.8+, casando com a base. Como
+  `return <expr-void>` é válido dentro de função `cv void`, **uma única
+  definição** compila em todo o range.
 
 ## 4. Referências
 
@@ -99,8 +134,6 @@ referência: **CachyOS, Plasma 6.31, KWin 6.8.2, Qt 6.12, sessão Wayland**
 - KDE/kwin `src/effect/effectloader.cpp`, `src/scene/itemrenderer_opengl.cpp`,
   `src/plugins/colorblindnesscorrection/*` — arquitetura acima.
 - develop.kde.org/docs/plasma/kwin/api — scripting API (ShaderTrait etc.).
-- Hyprland wiki: `decoration:saturation` — precedente de pós-processamento
-  comparável em outro compositor Wayland.
 
 ## 5. Números de escala
 

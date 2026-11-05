@@ -10,16 +10,23 @@
 #include <KSharedConfig>
 
 #include <QDebug>
-#include <QLatin1String>
 #include <QDBusConnection>
 #include <QTimer>
+
+// The drawWindow() hook this effect overrides is present with compatible
+// semantics since KWin 6.0 (effects API 0.236). Fail with a clear message on
+// older headers rather than a cryptic error; nothing here is pinned to an
+// *upper* version, so later 6.x releases keep compiling unchanged.
+#if !defined(KWIN_EFFECT_API_VERSION_MINOR) || KWIN_EFFECT_API_VERSION_MINOR < 236
+#error "way-vibrance requires KWin 6.0 or newer (Window effects API with RenderTarget/RenderViewport)"
+#endif
 
 namespace KWin
 {
 
-static constexpr auto s_configName = "wayvibrance"_L1;
-static constexpr auto s_dbusServiceName = "org.wayvibrance"_L1;
-static constexpr auto s_dbusObjectPath = "/Vibrance"_L1;
+static constexpr auto s_configName = "wayvibrance";
+static constexpr auto s_dbusServiceName = "org.wayvibrance";
+static constexpr auto s_dbusObjectPath = "/Vibrance";
 
 VibranceEffect::VibranceEffect()
 {
@@ -60,7 +67,10 @@ VibranceEffect::~VibranceEffect()
 bool VibranceEffect::supported()
 {
     // KWin's OpenGL scene renderer applies the saturation uniform natively.
-    // TODO: also accept Vulkan compositing once the renderer supports it.
+    // Version tolerance: gate on the compositor's runtime capability, never
+    // on a KWin version number. (TODO: also accept Vulkan compositing once
+    // its item renderer applies the saturation trait, to avoid a silent
+    // no-op there.)
     return effects->isOpenGLCompositing();
 }
 
@@ -94,12 +104,16 @@ void VibranceEffect::reloadConfig()
     }
 }
 
-bool VibranceEffect::drawWindow(const RenderTarget &renderTarget,
+// Version tolerance: the trailing return type *derives* from the base call —
+// void on KWin 6.0–6.7, bool on 6.8+ — and `return <void expr>` is valid in a
+// cv-void function, so this single definition compiles on every 6.x release.
+auto VibranceEffect::drawWindow(const RenderTarget &renderTarget,
                                 const RenderViewport &viewport,
                                 EffectWindow *w,
                                 int mask,
-                                const Region &region,
+                                const WvPaintRegion &region,
                                 WindowPaintData &data)
+    -> decltype(effects->drawWindow(renderTarget, viewport, w, mask, region, data))
 {
     data.multiplySaturation(m_vibrance);
     return effects->drawWindow(renderTarget, viewport, w, mask, region, data);
