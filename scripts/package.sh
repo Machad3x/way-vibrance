@@ -23,8 +23,14 @@ VERSION="$(grep -m1 'project(way-vibrance VERSION' CMakeLists.txt | awk '{print 
 DATE_R="$(date -R)"
 DIST="$PWD/dist"
 TOOL="${CONTAINER_TOOL:-podman}"
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
+KEEP_STAGE="${KEEP_STAGE:-0}"
+if [ "$KEEP_STAGE" = 1 ] && [ -d /tmp/wv-stage ]; then
+    STAGE=/tmp/wv-stage
+    echo "==> Reusing /tmp/wv-stage (KEEP_STAGE=1)"
+else
+    STAGE="$(mktemp -d /tmp/wv-stage.XXXX)"
+    trap 'rm -rf "$STAGE"' EXIT
+fi
 
 if ! git diff --quiet HEAD 2>/dev/null; then
     echo "==> WARNING: working tree differs from HEAD; the source tarball is taken from HEAD." >&2
@@ -55,6 +61,7 @@ pkg_fedora() {
 
 pkg_deb() { # $1=image $2=label
     echo "==> DEB ($2)"
+    rm -rf "$STAGE/way-vibrance-$VERSION/debian"
     cp -r packaging/debian "$STAGE/way-vibrance-$VERSION/debian"
     sed -i "s/@VERSION@/$VERSION/g; s/@DATE@/$DATE_R/g" "$STAGE/way-vibrance-$VERSION/debian/changelog"
     "$TOOL" run --rm -v "$STAGE:/work:rw" -v wv-aptcache:/var/cache/apt "docker.io/library/$1" bash -c "

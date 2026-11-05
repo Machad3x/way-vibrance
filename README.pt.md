@@ -2,243 +2,84 @@
 
 # Way Vibrance
 
-**Digital Vibrance / boost de saturação + ganhos RGB por canal para Linux no
-Wayland (KDE Plasma)** — o equivalente ao
+**Digital Vibrance / boost de saturação + ganhos RGB por canal + perfis por
+aplicação para Linux no Wayland (KDE Plasma)** — o equivalente ao
 [vibrance-gui](https://github.com/x64christ/Vibrance-GU) /
 [VibranceGUI](https://vibrancegui.com) do Windows, onde as ferramentas de
-driver (NVIDIA Digital Vibrance / AMD Saturation) não existem. Funciona em
-**qualquer sessão Wayland do KDE Plasma 6**: o projeto usa apenas a API
-pública e documentada de efeitos do KWin, sem depender de uma versão
-específica do Plasma.
+driver não existem. Funciona em **qualquer sessão Wayland do KDE Plasma 6**
+com composição OpenGL: o ajuste de cor acontece dentro do próprio KWin (o
+único compositor dono do display) como um efeito de desktop padrão —
+visualmente equivalente à vibrância de driver.
 
-No Wayland nenhum aplicativo de usuário pode escrever no CTM (Color
-Transformation Matrix) do display: o compositor (KWin) é o único dono do DRM
-master. A solução nativa é fazer o ajuste de cor acontecer **dentro do
-compositor**, como pós-processamento — visualmente equivalente ao vibrance
-do driver.
+| Janela principal | Editor de perfil | Menu da bandeja |
+|---|---|---|
+| ![Janela principal](docs/screenshots/app.png) | ![Editor de perfil](docs/screenshots/profiles.png) | ![Menu da bandeja](docs/screenshots/tray.png) |
 
-## Capturas de tela
+## O que você recebe
 
-Janela principal — vibrância global, ganhos RGB por canal, presets, atalho
-global e configurações de comportamento, com o painel de perfis por
-aplicação à direita:
-
-![Janela principal](docs/screenshots/app.png)
-
-Editor de perfil por aplicação — padrão, nome de exibição cosmético,
-presets de vibrância e ganhos de canal próprios:
-
-![Perfil por aplicação](docs/screenshots/profiles.png)
-
-Menu da bandeja do sistema:
-
-![Menu da bandeja](docs/screenshots/tray.png)
-
-## Compatibilidade de versão
-
-- O tray e a CLI conversam **puramente via D-Bus** (`org.wayvibrance` +
-  `org.kde.kwin.Effects`), estável em todo Plasma 6 — **não dependem de
-  versão nenhuma do KDE**.
-- O plugin do efeito é compilado **contra o KWin instalado na sua máquina**
-  (regra da categoria: a API de efeitos do KWin não tem garantia binária
-  entre releases). O mesmo *código-fonte* compila em KWin **6.0 → 6.9-git**,
-  adaptando automaticamente as variações de assinatura do `drawWindow()`
-  (`QRegion`→`Region` no 6.6, `void`→`bool` no 6.8) — sem pin de versão.
-  Após um update grande do Plasma, basta rodar `scripts/build.sh` de novo.
-
-## Como funciona
-
-- **`effect/`** — plugin C++ de desktop effect do KWin 6, com dois caminhos
-  de renderização separados por custo:
-  - **Vibrância**: `WindowPaintData::multiplySaturation()` no fim da cadeia
-    de efeitos (`chainPosition 99`). O renderizador de cena do KWin aplica
-    com o shader embutido, em **espaço de cor linear**, sem grab de janelas
-    nem passe extra.
-  - **Ganhos RGB por canal**: quando qualquer canal ≠ 100%, as janelas
-    passam pelo caminho *offscreen* (`OffscreenEffect`) com shader GLSL
-    próprio que multiplica os canais em espaço linear. Com todos os canais
-    em 100%, nada é redirecionado e o custo volta a zero.
-  - **Perfis por aplicação/jogo**: uma lista de regras associa um glob
-    (comparado sem diferenciar maiúsculas contra o `app_id` do Wayland /
-    `WM_CLASS` do X11, ou contra o título da janela quando o padrão usa o
-    prefixo `title:`) a um valor de vibrância e ganhos RGB por canal
-    opcionais. Janelas que casam substituem os valores globais: a vibrância
-    usa o mesmo uniform de saturação embutido (custo zero, funciona até sem
-    foco); os ganhos usam uma instância de GLShader dedicada por conjunto de
-    ganhos distinto — só janelas que realmente usam um perfil são
-    redirecionadas.
-  - Valores persistem em `kwinrc` (`[Effect-wayvibrance]` → `Vibrance`,
-    `Enabled`, `PrimaryOnly`, `RedGain`, `GreenGain`, `BlueGain`; os perfis
-    ficam no subgrupo `[Effect-wayvibrance][WayVibranceAppRules]`).
-  - Controle ao vivo (sem flicker/`reconfigure`) via **D-Bus**: serviço
-    `org.wayvibrance`, objeto `/Vibrance`, interface `org.wayvibrance`,
-    métodos `vibrance`, `setVibrance`, `enabled`, `setEnabled`,
-    `toggleEnabled`, `primaryOnly`, `setPrimaryOnly`, `primaryOutputName`,
-    `setPrimaryOutputName(nome)`, `screenList()`,
-    `redGain`/`greenGain`/`blueGain`, `setRGBGains(r,g,b)`, `appRules`,
-    `setAppRule(padrão,vibrância)`,
-    `setAppRuleFull(padrão,vibrância,r,g,b)`, `setAppRuleName(padrão,nome)`,
-    `removeAppRule(padrão)`,
-    `clearAppRules`, `lastFocusedAppId` e sinais `vibranceChanged`,
-    `enabledChanged`, `rgbGainsChanged`, `primaryOnlyChanged`,
-    `primaryOutputNameChanged`, `appRulesChanged`.
-- **`tray/`** — `wayvibrance-tray`: app de bandeja em Qt 6 (slider ao vivo
-  com throttle, 3 sliders de canal RGB com Reset, presets, liga/desliga,
-  editor de perfis por aplicação, hotkey global configurável, autostart,
-  configurações de comportamento) — é o "GUI" do vibrance-gui.
-- **`cli/`** — `wayvibrance`: terminal (`wayvibrance 1.25`,
-  `wayvibrance toggle`, `wayvibrance get`, `wayvibrance rgb R G B`,
-  `wayvibrance primary on|off|get|outputs|output <nome>`,
-  `wayvibrance app list|set|del|reset|focused`).
+- Vibrância global (0–200%) + ganhos R/G/B por canal, presets, bandeja + autostart
+- **Perfis por aplicação/jogo**: globs `app:` (app_id/WM_CLASS) ou `title:`,
+  cada um com vibrância + ganhos próprios, aplicados **por janela** (mesmo
+  sem foco) com custo extra de GPU zero
+- Hotkey global configurável, seletor de monitor para "só o monitor primário"
+- CLI, estado persistente (`kwinrc`) e pegada **só em espaço do usuário: sem
+  rede, sem daemon, sem telemetria**
+- Guia completo, API D-Bus e todos os detalhes: **[docs/FEATURES.md](docs/FEATURES.md)** (em inglês)
 
 ## Requisitos
 
-- **KDE Plasma 6** (KWin 6.0 ou mais novo) em sessão **Wayland**, composição
-  OpenGL. Compilado e testado em KWin 6.3.4 (Debian 13, Ubuntu 25.04),
-  Fedora atual e KWin 6.8 (Arch/CachyOS) — o mesmo fonte, sem pins.
-- Para compilar: `./scripts/build.sh` detecta a família da distro e instala
-  só o que falta — nunca atualiza o sistema:
-  - **Arch & derivadas**: `kwin qt6-base qt6-tools kconfig kcoreaddons
-    kdbusaddons kglobalaccel extra-cmake-modules cmake vulkan-headers libdrm
-    wayland` (+ `base-devel` se não houver `make`).
-  - **Família Fedora/RHEL** (Fedora 40+): `kwin-devel qt6-qtbase-devel
-    qt6-qttools kf6-kconfig-devel kf6-kcoreaddons-devel
-    kf6-kdbusaddons-devel kf6-kglobalaccel-devel libepoxy-devel
-    extra-cmake-modules cmake vulkan-headers libdrm-devel wayland-devel`.
-  - **Família Debian/Ubuntu** (Debian 13+, Ubuntu 24.10+, KDE Neon):
-    `kwin-dev qt6-base-dev qdbus-qt6 libkf6config-dev
-    libkf6coreaddons-dev libkf6dbusaddons-dev libkf6globalaccel-dev
-    libepoxy-dev extra-cmake-modules cmake libvulkan-dev libdrm-dev
-    libwayland-dev pkg-config` (os candidatos são probeados por nome;
-    `kwin-dev` cobre Debian e Ubuntu, alternativas são tentadas
-    automaticamente).
-  - Outras famílias: o script avisa e segue o build se os pacotes de
-    desenvolvimento já estiverem presentes.
-- Distros imutáveis (Silverblue/Kinoite…): o *build* já funciona dentro de
-  `distrobox`/`podman`, mas o KWin só varre diretórios de plugin do sistema
-  — carregamento em escopo de usuário (`~/.local/share/kwin/effects/plugins`,
-  `QT_PLUGIN_PATH`) foi testado e **não** funciona (KWin 6.3–6.8). O caminho
-  suportado é um RPM prebuilt via `rpm-ostree install` (roadmap). Nota para
-  SteamOS: a sessão de jogos gamescope não roda KWin, então o efeito só vale
-  para a sessão desktop.
+- KDE Plasma 6 (KWin ≥ 6.0), sessão Wayland, composição OpenGL.
+- Validado: Arch (KWin 6.8), Fedora, Debian 13 e Ubuntu 25.04 (6.3.4) — o
+  mesmo fonte compila de 6.0 até a versão mais recente, sem pin de versão.
 
 ## Instalação
 
+**Pacotes prebuilt** (da próxima release em diante): baixe o artefato da sua
+distro na [última release](https://github.com/Machad3x/way-vibrance/releases)
+— `.rpm` (Fedora; no Silverblue/Kinoite: `rpm-ostree install ./way-vibrance-*.rpm`),
+`.deb` (Debian 13+/Ubuntu 24.10+/Neon), `.pkg.tar.zst` (Arch).
+
+**Ou compile (qualquer distro suportada):**
+
 ```
-./scripts/build.sh
+./scripts/build.sh          # instala só o que falta de dependências — nunca atualiza o sistema
+sudo cmake --install build  # (o build.sh faz isso sozinho quando roda com sudo)
 ```
 
-Depois faça **logout + login** para o KWin carregar o plugin (para hot-load
-na sessão atual use `scripts/dev.sh load`; note que o KWin não recarrega
-com segurança um binário de efeito alterado — mudanças no plugin exigem nova
-sessão). Também dá para ativar em *Configurações do Sistema → Efeitos da
-Área de Trabalho → Aparência → Way Vibrance*, ou deixar o tray carregá-lo
-via D-Bus.
+Depois faça **logout + login** para o KWin carregar o plugin (binários de
+plugin não podem ser trocados a quente). Ative em *Configurações do Sistema
+→ Efeitos da Área de Trabalho → Aparência → Way Vibrance* ou apenas rode
+`wayvibrance-tray`.
 
 ## Uso
 
-- Bandeja/janela: slider de vibrância 0–200%, **3 sliders de ganho por canal
-  (R/G/B, 0–200%) com "Reset RGB"**, presets (50/100/125/150/200%),
-  liga/desliga.
-- **Perfis por aplicação/jogo** (grupo *Per-app profiles* na janela): cada
-  perfil combina um glob com um valor de vibrância e ganhos R/G/B opcionais —
-  padrões `app:` (o padrão) casam com o app_id do Wayland / WM_CLASS do X11,
-  padrões `title:` casam com o título da janela (ex.: `title:*Elden Ring*`);
-  `*` e `?` são curingas. O botão *"De último foco…"* pré-preenche o app_id da
-  janela usada por último — dois cliques para cadastrar um jogo. A lista mostra
-  nomes amigáveis (`org.kde.dolphin` → "Dolphin"); duplo clique em um perfil
-  abre uma janela própria com o slider de vibrância e os três sliders de
-  canal, onde também dá para definir um **nome de exibição** cosmético para a
-  linha da lista (o casamento continua usando sempre o padrão). **Apply**
-  reflete as mudanças na tela na hora; **OK** fecha a janela, perguntando se
-  quer aplicar o que ficou pendente. Em builds antigas do efeito o diálogo
-  esconde automaticamente o que o efeito não suporta. Janelas casadas usam os
-  valores do perfil em vez dos globais, **mesmo em segundo plano** (diferente
-  do vibrance-gui, que troca só no foco).
-- **Hotkey global**: sem vínculo padrão (não brigamos com os atalhos do
-  Plasma). Clique no campo *Global hotkey* e digite a combinação — aplicada
-  e persistida na hora (em `wayvibrancerc`, re-registrada no KGlobalAccel a
-  cada sessão), com detector de conflito e botão "Clear". Também editável em
-  *Configurações do Sistema → Atalhos de Teclado → wayvibrance-tray* (o tray
-  absorve mudanças feitas lá). Requer o tray rodando — ative "Start with
-  Plasma".
-- **Comportamento** (um check cada, como o Enabled): *Abrir direto na
-  bandeja ao iniciar*, *Iniciar com o Plasma* (autostart, exibido com ícone
-  correto no KCM de Autostart), *Afetar apenas o monitor primário* (a
-  correção vale só para a saída escolhida — um dropdown *Primary monitor*
-  aparece sob o check para selecioná-la; "Automatic" é a primeira saída do
-  KWin; janelas fora são compostas intocadas).
-- CLI: `wayvibrance 1.5` · `wayvibrance toggle` · `wayvibrance get` ·
-  `wayvibrance rgb 1.2 1 0.9` · `wayvibrance rgb reset` ·
-  `wayvibrance primary on` · `wayvibrance app list` ·
-  `wayvibrance app set firefox 1.5` · `wayvibrance app del 'title:*War*'` ·
-  `wayvibrance app focused`
-- Estado neutro (`1.0` em tudo, sem perfis) ⇒ `isActive() == false` ⇒ o
-  efeito sai da cadeia de renderização: **custo zero**.
+- **Bandeja/janela**: sliders de vibrância e canais RGB, presets
+  (50/100/125/150/200%), editor de perfis por app, campo de hotkey e
+  checkboxes de comportamento com seletor de monitor.
+- **CLI**: `wayvibrance --help` mostra tudo
+  (`wayvibrance 1.5`, `toggle`, `rgb …`, `primary …`, `app list|set|del|name|reset|focused`).
 
-## Paridade com o vibrance-gui
+## Notas que importam
 
-| Recurso | vibrance-gui (Windows) | Way Vibrance | status |
-|---|---|---|---|
-| Boost de vibrância global | driver CTM | uniform do shader no KWin | ✅ |
-| Ganhos por canal R/G/B | aba Color do driver | passe offscreen com GLSL | ✅ |
-| Ajuste ao vivo | driver API | D-Bus `org.wayvibrance` | ✅ |
-| Persistência | registro | `kwinrc` | ✅ |
-| Bandeja + autostart | ✅ | ✅ | ✅ |
-| Presets | perfis | 50/100/125/150/200% | ✅ |
-| Hotkey para alternar | ✅ | KGlobalAccel, tecla configurável | ✅ |
-| Afetar só um monitor | — (via perfis) | modo "monitor primário" (saída escolhida) | ✅ |
-| Perfis automáticos por app/jogo | ✅ (foco de janela) | regras por janela (`app:`/`title:` glob) — vale até sem foco | ✅ |
-| Valor próprio por monitor | ✅ | — (desde a v0.5.0 o modo pode restringir a uma saída; valores independentes por saída pedem uniform/passe por saída) | 🔜 |
-| Som/OSD ao trocar perfil | ✅ | OSD layer-shell | 🔜 |
-
-## Limitações conhecidas
-
-- **O cursor do mouse não é afetado** (é um hardware plane separado no KMS) —
-  mesmo trade-off do efeito de correção de daltonismo do próprio KWin.
-- **Ganhos RGB ≠ 100% ativam o caminho offscreen** (grab por janela +
-  shader): um pouco mais pesado que a vibrância pura, que segue no caminho
-  de custo zero. Deixe os canais em 100% para o modo leve.
-- Composição OpenGL apenas (Vulkan no roadmap).
-- O binário do plugin é casado com o KWin instalado; um `scripts/build.sh`
-  rápido após updates grandes mantém tudo em dia (a compatibilidade de
-  fonte é automática — ver acima).
-- "Monitor primário" mira a saída que você escolher (por nome de conector,
-  ex. `DP-1`) — a API pública de efeitos do KWin não expõe um conceito de
-  saída primária, então sem escolha usa-se a **primeira** saída; selecione
-  de novo após mudar a configuração de monitores.
-- Com efeito de janela ativo, janelas em fullscreen exclusivo podem perder o
-  fast path de direct scanout do compositor (leve custo de latência; medir).
+- O cursor do mouse não é afetado (hardware plane) e ganhos RGB ≠ 100% usam
+  o caminho offscreen (um pouco mais pesado, mas ainda barato). A lista
+  completa de [limitações](docs/FEATURES.md#known-limitations) e os
+  [detalhes de compatibilidade de versão](docs/FEATURES.md#version-compatibility)
+  estão na documentação.
+- Tudo roda em espaço do usuário: sem daemons, sem rede, sem telemetria;
+  escreve apenas em `~/.config/{kwinrc,wayvibrancerc}` —
+  [privacidade & pegada](docs/FEATURES.md#privacy--footprint).
 
 ## Roadmap
 
-1. Vibrância "de verdade" (protege tons de pele — algoritmo do
-   [libvibrant](https://github.com/libvibrant/vibrant-cli)) como modo
-   opcional de shader.
-2. Valores por saída (o seletor de monitor já está no tray).
-3. HDR / fidelidade em wide gamut (correção consciente de BT.2020).
-4. PKGBUILD (rebuild automático estilo AUR) para recompilar o efeito a cada
-   update do KWin.
-5. Pacotes prebuilt para todas as famílias — RPM (incluindo
-   `rpm-ostree install` para Fedora Atomic/Kinoite, o único caminho que
-   funciona em imutáveis: o KWin ignora `~/.local` e `QT_PLUGIN_PATH` para
-   efeitos), DEB (Debian/Ubuntu), PKGBUILD/AUR (Arch). CI: a matriz podman
-   (arch/fedora/debian/ubuntu) já valida cada build.
+Vibrância "de verdade", valores por saída, HDR, backend Vulkan, pacotes
+prebuilt/CI, OSD — veja **[docs/ROADMAP.md](docs/ROADMAP.md)** (em inglês).
 
 ## Estado
 
-Funcional e em uso diário. Release atual: **v0.5.0** — o modo "monitor
-primário" agora mira uma **saída escolhida pelo usuário** (dropdown no tray /
-`wayvibrance primary output <nome>`, persistida; "automático" = primeira
-saída), substituindo o antigo comportamento de seguir o cursor. Sobre a base
-da v0.4.0: perfis por aplicação/jogo (o carro-chefe do vibrance-gui, um passo
-à frente: por janela em vez de por foco) — regras por glob `app:`/`title:`
-com ganhos de canal por perfil, nomes de exibição cosméticos, janela de
-edição própria com Apply/presets e atualização confiável via shaders em
-contexto; 50% entrou na fileira de presets; janela em dois painéis; CLI
-`wayvibrance app …`; o `build.sh` instala dependências sem nunca atualizar o
-sistema. Tudo da v0.3.0 (vibrância, ganhos RGB, hotkey, comportamento) segue
-valendo, com os sliders no teto real de 0–200%.
+Funcional e em uso diário; release atual **v0.5.0** (seletor do monitor
+primário). Perfis por aplicação vieram na v0.4.0; suporte multi-distro,
+empacotamento e a reorganização da doc estão na fila da próxima release.
 
 ## Desenvolvimento
 
@@ -247,17 +88,19 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build --parallel
 sudo cmake --install build
 scripts/dev.sh {load|unload|toggle|status}   # hot-load na sessão
+scripts/package.sh [fedora|debian|ubuntu|arch]  # prebuilts → dist/
 ```
 
-`docs/RESEARCH.md` registra as descobertas da API do KWin 6.8 que
-fundamentaram cada decisão — caminhos de descoberta de efeitos, o uniform de
-saturação, o mapa de assinaturas entre releases e as superfícies D-Bus.
+Docs: [features & referência](docs/FEATURES.md) ·
+[roadmap](docs/ROADMAP.md) ·
+[RESEARCH.md](docs/RESEARCH.md) (as descobertas da API do KWin por trás de
+cada decisão de projeto).
 
 ## Assistência de IA
 
-Este projeto foi criado **vibe-coded com auxílio de IA**: código, pesquisa e
-documentação foram gerados e refinados junto com um agente de programação
-por IA (OpenCode), sob direção e revisão do mantenedor. Todo o histórico da
+Este projeto foi **vibe-coded com assistência de IA**: código, pesquisa e
+documentação foram gerados e refinados junto com um agente de codificação
+(OpenCode), sob direção e revisão do mantenedor. O histórico completo da
 colaboração está preservado no git log.
 
 ## Licença
