@@ -61,6 +61,15 @@ Then **log out and back in** so KWin loads the plugin (plugin binaries
 cannot be hot-swapped by KWin). Enable via *System Settings → Desktop
 Effects → Appearance → Way Vibrance* or just start `wayvibrance-tray`.
 
+**Uninstall a manual build** with `./scripts/uninstall.sh`: it hot-unloads
+the effect from the running session, removes exactly the installed files
+(manifest-aware, `--prefix` for home installs, `--dry-run` to preview), and
+by default **keeps** your configuration while printing where it lives —
+`--purge-config` additionally strips the `[Effect-wayvibrance]` groups from
+`kwinrc` and deletes `wayvibrancerc` + the autostart entry. Package
+installs go through your package manager (`pacman -Rns way-vibrance`,
+`dnf remove`, `apt remove`, `rpm-ostree uninstall`).
+
 ## Use
 
 - **Tray/window**: sliders for vibrance + RGB channels, presets

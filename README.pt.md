@@ -44,7 +44,7 @@ promessa binária entre versões):
 - `.deb` — Debian 13/14-testing (`~debian13`/`~debian14`) e Ubuntu
   26.04/26.10 (`~ubuntuXX.YY`); instale com `sudo apt install ./…deb`
 - `.pkg.tar.zst` — Arch & derivadas (`sudo pacman -U …`)
-Pacotes são fornecidos **apenas para releases ainda suportadas upstream**
+- Pacotes são fornecidos **apenas para releases ainda suportadas upstream**
   (ex.: Ubuntu 25.04/25.10 saíram da matriz ao chegarem ao EOL).
 - Para regenerar tudo localmente: `scripts/package.sh` (matriz podman)
 
@@ -61,6 +61,16 @@ Depois faça **logout + login** para o KWin carregar o plugin (binários de
 plugin não podem ser trocados a quente). Ative em *Configurações do Sistema
 → Efeitos da Área de Trabalho → Aparência → Way Vibrance* ou apenas rode
 `wayvibrance-tray`.
+
+**Desinstalar um build manual**: `./scripts/uninstall.sh` — faz o
+hot-unload do efeito na sessão que estiver rodando, remove exatamente os
+arquivos instalados (usa o manifesto do build, `--prefix` para instalações
+no home, `--dry-run` para prévia) e por padrão **mantém** sua configuração,
+imprimindo onde ela fica; `--purge-config` também remove os grupos
+`[Effect-wayvibrance]` do `kwinrc` e apaga `wayvibrancerc` + a entrada de
+autostart. Instalações via pacote usam o gerenciador de pacotes
+(`pacman -Rns way-vibrance`, `dnf remove`, `apt remove`,
+`rpm-ostree uninstall`).
 
 ## Uso
 

@@ -120,6 +120,10 @@ Profile serialization: `kind:pattern|vibrance[|r,g,b[|display-name]]`
 | `~/.config/wayvibrancerc` | hotkey (`[Shortcuts] GlobalToggleShortcut`) and `[General] StartHidden` |
 | `~/.config/autostart/org.kde.wayvibrance-tray.desktop` | autostart toggle |
 
+`scripts/uninstall.sh [--prefix PATH] [--purge-config] [--dry-run]` removes
+a manually installed build, hot-unloading the effect first; package
+installs are uninstalled with the package manager.
+
 ## Version compatibility
 
 - The tray and the CLI talk **pure D-Bus** (`org.wayvibrance` plus
