@@ -366,21 +366,21 @@ bool VibranceEffect::rgbGainsActive() const
 // ---------------------------------------------------------------------------
 
 /**
- * Matches a user glob against a string, anchored and case-insensitive.
- * Only '*'
- * and '?' act as wildcards; everything else is literal.
+ * Matches a user glob against a string, anchored and case-insensitive:
+ * '*' spans any run, '?' consumes exactly one character, everything else
+ * is literal.
  */
 static bool globMatch(const QString &glob, const QString &text)
 {
     // Iterative wildcards matcher with a single rewind point: worst case is
     // a linear scan per '*' run (bounded by glob.size() * text.size() with a
-    // tiny constant) — unlike a translated regex, patterns like "*a*a*a…"
-    // cannot explode into backtracking that stalls the compositor on the
-    // paint path. Semantics equal the previous anchored, case-insensitive
-    // translation: '*' spans any run, '?' consumes exactly one character
-    // (including one UTF-16 code unit, as PCRE's '.' did), literals match
-    // case-insensitively per Qt's char rule (equal after toLower or
-    // toUpper), and the whole string must match.
+    // tiny constant). No pattern can explode into backtracking that stalls
+    // the compositor on the paint path. Semantics are the documented glob
+    // language — historically shipped as a translated, anchored,
+    // case-insensitive pattern and re-verified case-by-case identical:
+    // '*' spans any run, '?' consumes exactly one character (one UTF-16
+    // code unit), literals compare case-insensitively per Qt's char rule
+    // (equal after toLower or toUpper), and the whole string must match.
     int g = 0;
     int t = 0;
     int starAt = -1;
@@ -762,14 +762,18 @@ void VibranceEffect::onWindowActivated(EffectWindow *w)
     if (id.isEmpty()) {
         id = w->window()->resourceName();
     }
+    // Cap before ANY scan of it: contains() on a hostile megabyte identity
+    // would charge the compositor per activation (resolveWindow's cap does
+    // not cover this path — this is the only consumer of the raw id).
+    if (id.size() > kMaxWindowIdentityLength) {
+        id.truncate(kMaxWindowIdentityLength);
+    }
     // Our own windows must not shadow the game/app the user just alt+tabbed
     // through on the way to the tray controls.
     if (id.isEmpty() || id.contains(QLatin1String("wayvibrance"), Qt::CaseInsensitive)) {
         return;
     }
-    m_lastFocusedAppId = id.size() > kMaxWindowIdentityLength
-        ? id.left(kMaxWindowIdentityLength)
-        : id;
+    m_lastFocusedAppId = std::move(id);
 }
 
 /**

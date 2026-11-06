@@ -438,8 +438,11 @@ public:
      *  pending is ignored instead of stacking dialogs. */
     void requestLastFocusedAppId(std::function<void(const QString &)> cb)
     {
-        if (m_lastFocusedPending || !m_interface) {
-            cb(QString());
+        if (m_lastFocusedPending) {
+            return; // a reply for the earlier click is already coming; no dialog stacking
+        }
+        if (!m_interface) {
+            cb(QString()); // no effect: open the dialog with an empty pre-fill (as before)
             return;
         }
         m_lastFocusedPending = true;
