@@ -155,7 +155,7 @@ inline QString buildAppStyle(const QPalette &palette)
         " border: 1px solid %BORDER%;"
         " border-radius: 8px;"
         " margin-top: 1.5em;"
-        " padding: 12px;"
+        " padding: 10px;"
         "}"
         "QGroupBox::title {"
         " subcontrol-origin: margin;"
@@ -265,10 +265,16 @@ inline QString buildAppStyle(const QPalette &palette)
         " background-color: %HIGHLIGHT%;"
         " color: %HIGHLIGHTED_TEXT%;"
         "}"
-        "QPushButton[wvPreset=\"true\"]:focus { border-color: %HIGHLIGHT%; }"
+        // A checked segment already has a highlight border, so a highlight
+        // focus ring would be invisible on it. The button text colour is the
+        // scheme foreground and contrasts with both the base and the
+        // highlight background.
+        "QPushButton[wvPreset=\"true\"]:focus { border-color: %BUTTON_TEXT%; }"
 
         // Compact clear action for the shortcut field.
-        "QToolButton[wvClear=\"true\"] { border: none; border-radius: 4px; padding: 3px; }"
+        // The transparent border keeps the focus ring from changing the
+        // button's size hint when the user tabs into it.
+        "QToolButton[wvClear=\"true\"] { border: 1px solid transparent; border-radius: 4px; padding: 3px; }"
         "QToolButton[wvClear=\"true\"]:hover { background-color: %MIDLIGHT%; }"
         "QToolButton[wvClear=\"true\"]:pressed { background-color: %MID%; }"
         "QToolButton[wvClear=\"true\"]:focus { border: 1px solid %HIGHLIGHT%; }"

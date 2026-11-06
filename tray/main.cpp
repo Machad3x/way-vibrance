@@ -1233,7 +1233,10 @@ public:
         columns->setContentsMargins(16, 16, 16, 16);
         columns->setSpacing(18);
         auto *outerLayout = new QVBoxLayout();
-        outerLayout->setSpacing(10);
+        // Tight enough that the whole window (including the extra "Load
+        // effect" row) still fits a 1366x768 work area, which the first
+        // card layout overshot by a few pixels.
+        outerLayout->setSpacing(8);
         columns->addLayout(outerLayout, 5);
         m_sidePane = new QWidget(central);
         auto *sideLayout = new QVBoxLayout(m_sidePane);

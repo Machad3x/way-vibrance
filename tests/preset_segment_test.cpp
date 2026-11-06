@@ -17,17 +17,23 @@
       4. the group's exclusivity is restored after every sync, so a later
          click still behaves like a segmented control;
       5. the factory tolerates a null group (the tray can call sync before
-         the control is built).
+         the control is built);
+      6. keyboard focus stays visible on a checked segment without changing
+         its size (the checked border and a highlight focus border would be
+         the same colour, hiding the ring).
 
     Runs offscreen, no session bus needed. Exit code != 0 on failure.
 */
 
 #include "segmented_p.h"
+#include "style_p.h"
 
 #include <QApplication>
 #include <QButtonGroup>
+#include <QImage>
 #include <QPushButton>
 #include <QSlider>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <cstdio>
@@ -47,6 +53,7 @@ static void check(bool ok, const char *what)
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
+    app.setStyleSheet(wvstyle::buildAppStyle(app.palette()));
 
     // ---- 1. factory contract ----
     {
@@ -128,7 +135,34 @@ int main(int argc, char **argv)
         check(group.checkedButton() == buttons[0], "sync recovers from a manual check");
     }
 
-    // ---- 5. null group is a no-op (startup ordering) ----
+    // ---- 5. keyboard focus is visible on a checked segment ----
+    {
+        QWidget parent;
+        auto *layout = new QVBoxLayout(&parent);
+        QButtonGroup group(&parent);
+        group.setExclusive(true);
+        QPushButton *button = wvseg::createPresetButton(&parent, QStringLiteral("100%"), true, true);
+        button->setProperty("wvPresetValue", 100);
+        group.addButton(button);
+        wvseg::syncPresetGroup(&group, 100);
+        layout->addWidget(button);
+        parent.show();
+        app.processEvents();
+
+        button->clearFocus();
+        app.processEvents();
+        const QImage unfocused = button->grab().toImage();
+
+        button->setFocus(Qt::TabFocusReason);
+        app.processEvents();
+        const QImage focused = button->grab().toImage();
+
+        check(button->hasFocus(), "segment accepts keyboard focus");
+        check(focused.size() == unfocused.size(), "focus ring does not resize the segment");
+        check(focused != unfocused, "focus ring is visible on a checked segment");
+    }
+
+    // ---- 6. null group is a no-op (startup ordering) ----
     wvseg::syncPresetGroup(nullptr, 100);
     check(true, "null group tolerated");
 
