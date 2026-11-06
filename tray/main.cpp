@@ -1007,6 +1007,11 @@ public:
         m_presetGroup->setExclusive(true);
         auto *presetRow = new QHBoxLayout();
         presetRow->setSpacing(0);
+        // Two passes so every segment ends up the exact same width: the
+        // widest label sets the shared minimum, then stretch 1 distributes
+        // the rest equally (no text-length jitter between 0% and 200%).
+        QList<QPushButton *> dialogPresets;
+        dialogPresets.reserve(wvseg::kPresetCount);
         for (int i = 0; i < wvseg::kPresetCount; ++i) {
             const int percent = wvseg::kPresetValues[i];
             auto *presetButton = wvseg::createPresetButton(
@@ -1020,9 +1025,15 @@ public:
                 // already-active preset must still re-assert the group state.
                 wvseg::syncPresetGroup(m_presetGroup, m_vibSlider->value());
             });
-            // Equal expanding segments: the row spans the card instead of
-            // hugging the left with a gap on the right.
-            presetRow->addWidget(presetButton, 1);
+            dialogPresets.append(presetButton);
+        }
+        int maxPresetWidth = 0;
+        for (auto *b : dialogPresets) {
+            maxPresetWidth = qMax(maxPresetWidth, b->sizeHint().width());
+        }
+        for (auto *b : dialogPresets) {
+            b->setMinimumWidth(maxPresetWidth);
+            presetRow->addWidget(b, 1);
         }
         vibranceLayout->addLayout(presetRow);
         connect(m_vibSlider, &QSlider::valueChanged, this, [this](int percent) {
@@ -1278,6 +1289,10 @@ public:
         m_presetGroup->setExclusive(true);
         auto *presets = new QHBoxLayout();
         presets->setSpacing(0);
+        // Two passes so every segment ends up the exact same width (no
+        // text-length jitter between 0% and 200%).
+        QList<QPushButton *> trayPresets;
+        trayPresets.reserve(wvseg::kPresetCount);
         for (int i = 0; i < wvseg::kPresetCount; ++i) {
             const int percent = wvseg::kPresetValues[i];
             auto *button = wvseg::createPresetButton(
@@ -1297,7 +1312,15 @@ public:
                     m_controller->requestVibrancePercent(percent);
                 }
             });
-            presets->addWidget(button, 1);
+            trayPresets.append(button);
+        }
+        int maxTrayPresetWidth = 0;
+        for (auto *b : trayPresets) {
+            maxTrayPresetWidth = qMax(maxTrayPresetWidth, b->sizeHint().width());
+        }
+        for (auto *b : trayPresets) {
+            b->setMinimumWidth(maxTrayPresetWidth);
+            presets->addWidget(b, 1);
         }
         vibranceLayout->addLayout(presets);
         wvseg::syncPresetGroup(m_presetGroup, m_slider->value());
