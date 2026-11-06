@@ -41,3 +41,9 @@ target_include_directories(switch_widget_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
 add_test(NAME switch_widget_test COMMAND switch_widget_test)
 set_tests_properties(switch_widget_test PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Same guarantees under a 2x device pixel ratio: the focus ring is scaled by
+# the painter and the hit/knob geometry must not assume logical pixels.
+add_test(NAME switch_widget_test_hidpi COMMAND switch_widget_test)
+set_tests_properties(switch_widget_test_hidpi PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")

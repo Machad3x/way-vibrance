@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include "style_p.h"
+
 #include <QCheckBox>
 #include <QEvent>
 #include <QFontMetrics>
@@ -66,6 +68,64 @@ public:
         return QSize(kTrackWidth + kGap, kHeight);
     }
 
+    /**
+     * Track outline adapted until it reaches 3:1 against the card.
+     *
+     * Midlight is nearly the card colour in several real schemes (Breeze
+     * Dark in particular), and Mid can be too, so the capsule would lose
+     * its boundary and the knob would look detached. Blending toward the
+     * foreground keeps the border neutral and tied to the live palette.
+     */
+    static QColor outlineColor(const QPalette &palette, QPalette::ColorGroup group,
+                               const QColor &card)
+    {
+        const QColor base = palette.color(group, QPalette::Midlight);
+        const QColor text = palette.color(group, QPalette::WindowText);
+        QColor outline = base;
+        for (int step = 1; step <= 20 && wvstyle::contrastRatio(outline, card) < 3.0; ++step) {
+            outline = wvstyle::blend(base, text, step * 0.05);
+        }
+        return outline;
+    }
+
+    /**
+     * Knob colour with a last-resort contrast guard.
+     *
+     * The preferred colour is the scheme foreground (off) or highlighted
+     * text (on). A few high-contrast schemes set Mid or Highlight to the
+     * same colour as that foreground, which would erase the knob entirely;
+     * in that case the other semantic foregrounds are tried and, failing
+     * that, black or white is chosen against the track fill. The fallback
+     * never triggers on Breeze Light/Dark (checked by the test).
+     */
+    static QColor knobColor(const QPalette &palette, bool checked, QPalette::ColorGroup group)
+    {
+        const QColor fill = palette.color(group, checked ? QPalette::Highlight : QPalette::Mid);
+        const QColor preferred = palette.color(
+            QPalette::Active, checked ? QPalette::HighlightedText : QPalette::WindowText);
+        if (wvstyle::contrastRatio(preferred, fill) >= 2.0) {
+            return preferred;
+        }
+
+        const QColor candidates[] = {
+            palette.color(QPalette::Active, QPalette::WindowText),
+            palette.color(QPalette::Active, QPalette::HighlightedText),
+            palette.color(QPalette::Active, QPalette::Text),
+            palette.color(QPalette::Active, QPalette::Base),
+        };
+        QColor best = preferred;
+        for (const QColor &candidate : candidates) {
+            if (wvstyle::contrastRatio(candidate, fill)
+                > wvstyle::contrastRatio(best, fill)) {
+                best = candidate;
+            }
+        }
+        if (wvstyle::contrastRatio(best, fill) < 2.0) {
+            best = wvstyle::relativeLuminance(fill) > 0.5 ? QColor(Qt::black) : QColor(Qt::white);
+        }
+        return best;
+    }
+
 protected:
     void paintEvent(QPaintEvent *) override
     {
@@ -76,6 +136,12 @@ protected:
         const QPalette &pal = palette();
         const bool checked = isChecked();
         const bool rtl = layoutDirection() == Qt::RightToLeft;
+        // The cards keep the application's active surface even while one
+        // control is disabled, so the contrast reference must not follow the
+        // widget's current (Disabled) group.
+        QPalette activePalette = pal;
+        activePalette.setCurrentColorGroup(QPalette::Active);
+        const QColor card = wvstyle::cardColor(activePalette);
 
         // The track sits at the trailing edge.
         const QRectF track(rtl ? kEdge : width() - kEdge - kTrackWidth,
@@ -89,7 +155,7 @@ protected:
         // Mid often coincide, which would erase the knob and therefore the
         // on/off position.
         painter.setOpacity(isEnabled() ? 1.0 : 0.6);
-        painter.setPen(QPen(pal.color(group, QPalette::Midlight), 1.0));
+        painter.setPen(QPen(outlineColor(pal, group, card), 1.0));
         painter.setBrush(pal.color(group, checked ? QPalette::Highlight : QPalette::Mid));
         painter.drawRoundedRect(track, kTrackHeight / 2.0, kTrackHeight / 2.0);
 
@@ -102,16 +168,16 @@ protected:
                                               : track.left() + kKnobInset + kKnob / 2.0,
                                  track.center().y());
         painter.setPen(Qt::NoPen);
-        painter.setBrush(pal.color(QPalette::Active,
-                                   checked ? QPalette::HighlightedText : QPalette::WindowText));
+        painter.setBrush(knobColor(pal, checked, group));
         painter.drawEllipse(knobCenter, radius, radius);
         painter.setOpacity(1.0);
 
         // Focus is a row-level ring: it is drawn inside the widget so the
         // switch can keep the height of a text row and never move the card.
         if (hasFocus() && isEnabled()) {
+            // Not cosmetic: on a 2x display the ring must scale with the
+            // device pixel ratio instead of staying 1.5 device pixels thin.
             QPen ring(pal.color(QPalette::Active, QPalette::WindowText), 1.5);
-            ring.setCosmetic(true);
             painter.setPen(ring);
             painter.setBrush(Qt::NoBrush);
             painter.drawRoundedRect(QRectF(rect()).adjusted(0.75, 0.75, -0.75, -0.75),
@@ -134,7 +200,8 @@ protected:
             const Qt::Alignment alignment =
                 (rtl ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter;
             painter.drawText(textRect, alignment,
-                             fontMetrics().elidedText(text(), Qt::ElideRight,
+                             fontMetrics().elidedText(text(),
+                                                      rtl ? Qt::ElideLeft : Qt::ElideRight,
                                                       int(textRect.width())));
         }
     }

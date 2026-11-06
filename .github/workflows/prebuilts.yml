@@ -79,6 +79,7 @@ jobs:
           g++ -O1 -std=c++17 -fPIC tests/switch_widget_test.cpp -Itray \
             $(pkg-config --cflags --libs Qt6Widgets) -o switch_widget_test
           QT_QPA_PLATFORM=offscreen ./switch_widget_test
+          QT_QPA_PLATFORM=offscreen QT_SCALE_FACTOR=2 ./switch_widget_test
 
   packages:
     needs: unit-tests      # red unit tests must gate the artifacts (jobs

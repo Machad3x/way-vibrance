@@ -57,6 +57,12 @@ inline qreal contrastRatio(const QColor &a, const QColor &b)
     return (qMax(la, lb) + 0.05) / (qMin(la, lb) + 0.05);
 }
 
+/// Card surface used behind the tray cards (see themeColors()).
+inline QColor cardColor(const QPalette &palette)
+{
+    return blend(palette.color(QPalette::Window), palette.color(QPalette::Base), 0.55);
+}
+
 /// Semantic channel colour (red/green/blue) before theme adaptation.
 inline QColor baseChannelColor(int index)
 {
@@ -110,7 +116,7 @@ inline ThemeColors themeColors(const QPalette &palette)
     // Card surfaces are a blend of Window and Base: darker than the window
     // in a dark scheme, lighter in a light one, so one formula serves both.
     const bool dark = colors.window.lightness() < 128;
-    colors.card = blend(colors.window, colors.base, 0.55);
+    colors.card = cardColor(palette);
     colors.border = blend(colors.window, colors.text, dark ? 0.16 : 0.14);
     // Secondary text needs a little more foreground in a light scheme to
     // stay above 4.5:1 on the card surface (checked by the theme test).

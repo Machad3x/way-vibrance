@@ -15,9 +15,14 @@
       5. checked/unchecked, enabled/disabled, light/dark and LTR/RTL all
          render differently (palette-derived, knob mirrored, no hard-coded
          theme);
-      6. the size hint reserves room for the label and the track.
+      6. the track outline reaches 3:1 on the card even when Midlight is the
+         card colour, and the knob survives a scheme where its preferred
+         colour matches the track;
+      7. the size hint reserves room for the label and the track.
 
-    Runs offscreen, no session bus needed. Exit code != 0 on failure.
+    Runs offscreen, no session bus needed, and is run twice by ctest/CI: once
+    at the normal scale and once with QT_SCALE_FACTOR=2. Exit code != 0 on
+    failure.
 */
 
 #include "switch_p.h"
@@ -25,8 +30,10 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QEvent>
 #include <QImage>
 #include <QKeyEvent>
+#include <QMainWindow>
 #include <QMouseEvent>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -92,6 +99,36 @@ static void sendKey(QWidget *widget, int key)
     QApplication::processEvents();
 }
 
+// Mirrors TrayWindow::event() in tray/main.cpp: on ApplicationPaletteChange
+// the single application sheet is rebuilt from the live palette. An
+// application stylesheet freezes widget palettes until that rebuild, so a
+// palette change alone (without the rebuild) must not be expected to reach
+// the switch. This window proves the real protocol end to end.
+class PaletteWindow : public QMainWindow
+{
+public:
+    explicit PaletteWindow(QWidget *parent = nullptr)
+        : QMainWindow(parent)
+    {
+        auto *central = new QWidget(this);
+        setCentralWidget(central);
+        auto *layout = new QVBoxLayout(central);
+        m_switch = new wvswitch::Switch(QStringLiteral("Only affect the primary monitor"), central);
+        m_switch->setChecked(true);
+        layout->addWidget(m_switch);
+    }
+    wvswitch::Switch *m_switch = nullptr;
+
+protected:
+    bool event(QEvent *event) override
+    {
+        if (event->type() == QEvent::ApplicationPaletteChange) {
+            qApp->setStyleSheet(wvstyle::buildAppStyle(qApp->palette()));
+        }
+        return QMainWindow::event(event);
+    }
+};
+
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
@@ -147,7 +184,31 @@ int main(int argc, char **argv)
     check(focused.size() == unfocused.size(), "focus ring does not resize");
     check(focused != unfocused, "focus ring is visible");
 
-    // ---- 5. states, palettes and direction ----
+    // ---- 5. a runtime application palette change repaints the switch ----
+    // (via the TrayWindow rebuild protocol above, tested end to end)
+    {
+        const QPalette original = app.palette();
+        PaletteWindow window;
+        window.show();
+        app.processEvents();
+        const QImage before = grab(window.m_switch);
+        app.setPalette(darkPalette());
+        app.processEvents();
+        const QImage after = grab(window.m_switch);
+        check(after != before, "application palette change is followed");
+        check(window.m_switch->palette().color(QPalette::WindowText)
+                  == app.palette().color(QPalette::WindowText),
+              "switch palette tracks the application palette");
+        window.hide();
+        app.setPalette(original);
+        app.processEvents();
+        // Hiding the palette window leaves this one inactive, and an
+        // inactive window cannot take keyboard focus for the checks below.
+        parent.activateWindow();
+        app.processEvents();
+    }
+
+    // ---- 6. states, palettes and direction ----
     sw->setChecked(false);
     sw->clearFocus();
     const QImage offLight = grab(sw);
@@ -171,14 +232,71 @@ int main(int argc, char **argv)
         // A disabled switch dims its colours, so Disabled WindowText and Mid
         // can coincide. The knob must still be distinguishable from the
         // track, otherwise the on/off position becomes invisible.
+        // grab() returns device pixels, so scale the logical coordinates by
+        // the same factor (the test also runs with QT_SCALE_FACTOR=2).
+        const qreal scale = qreal(disabled.width()) / sw->width();
         const int midY = disabled.height() / 2;
-        const QColor knob = disabled.pixelColor(disabled.width() - 11, midY);
-        const QColor track = disabled.pixelColor(disabled.width() - 31, midY);
+        const QColor knob = disabled.pixelColor(qRound((sw->width() - 11) * scale), midY);
+        const QColor track = disabled.pixelColor(qRound((sw->width() - 31) * scale), midY);
         check(colorDistance(knob, track) > 60,
               "disabled switch still shows the knob position");
     }
     sw->setEnabled(true);
     sw->setPalette(app.palette());
+
+    // ---- 7. the capsule outline survives real scheme shades ----
+    {
+        // Midlight is nearly the card colour in Breeze Dark-like palettes,
+        // and Mid can be too, so the outline is adapted toward the
+        // foreground until it reaches 3:1 against the card.
+        QPalette light = app.palette();
+        light.setCurrentColorGroup(QPalette::Active);
+        const QColor lightCard = wvstyle::cardColor(light);
+        const QColor lightOutline =
+            wvswitch::Switch::outlineColor(light, QPalette::Active, lightCard);
+        check(wvstyle::contrastRatio(lightOutline, lightCard) >= 3.0,
+              "outline reaches 3:1 on the light card");
+
+        QPalette dark = darkPalette();
+        dark.setCurrentColorGroup(QPalette::Active);
+        const QColor darkCard = wvstyle::cardColor(dark);
+        const QColor darkOutline =
+            wvswitch::Switch::outlineColor(dark, QPalette::Active, darkCard);
+        check(wvstyle::contrastRatio(darkOutline, darkCard) >= 3.0,
+              "outline reaches 3:1 on the dark card");
+
+        // Pathological case: Midlight is exactly the card colour.
+        QPalette worst = app.palette();
+        worst.setCurrentColorGroup(QPalette::Active);
+        const QColor worstCard = wvstyle::cardColor(worst);
+        worst.setColor(QPalette::Midlight, worstCard);
+        worst.setColor(QPalette::WindowText, QColor(Qt::black));
+        const QColor worstOutline =
+            wvswitch::Switch::outlineColor(worst, QPalette::Active, worstCard);
+        check(wvstyle::contrastRatio(worstOutline, worstCard) >= 3.0,
+              "outline is rescued when Midlight matches the card");
+    }
+
+    // ---- 8. the knob survives a pathological high-contrast scheme ----
+    {
+        QPalette normal = darkPalette();
+        normal.setCurrentColorGroup(QPalette::Active);
+        const QColor normalFill = normal.color(QPalette::Active, QPalette::Mid);
+        check(wvstyle::contrastRatio(
+                  wvswitch::Switch::knobColor(normal, false, QPalette::Active), normalFill) >= 2.0,
+              "off knob stays visible on a normal scheme");
+
+        QPalette invisible = app.palette();
+        invisible.setColor(QPalette::Mid, QColor(Qt::white));
+        invisible.setColor(QPalette::WindowText, QColor(Qt::white));
+        invisible.setColor(QPalette::Highlight, QColor(Qt::yellow));
+        invisible.setColor(QPalette::HighlightedText, QColor(Qt::black));
+        const QColor invisibleFill = invisible.color(QPalette::Active, QPalette::Mid);
+        check(wvstyle::contrastRatio(
+                  wvswitch::Switch::knobColor(invisible, false, QPalette::Active), invisibleFill)
+                  >= 2.0,
+              "knob is rescued when it matches the track");
+    }
 
     // Knob mirroring: use an empty label so only the track geometry can
     // differ between LTR and RTL.
