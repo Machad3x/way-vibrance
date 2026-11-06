@@ -13,6 +13,12 @@ name: prebuilts
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing tag/release to attach artifacts to (empty = triggered ref)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -33,7 +39,7 @@ jobs:
       - name: Attach artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
           files: |
             dist/*.rpm
             dist/*.deb
