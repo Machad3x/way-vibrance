@@ -1379,7 +1379,13 @@ public:
         if (folderIcon.isNull()) {
             folderIcon = style()->standardIcon(QStyle::SP_DirOpenIcon);
         }
-        emptyIcon->setPixmap(folderIcon.pixmap(48, 48));
+        // 48 logical pixels, rendered at the widget's device pixel ratio:
+        // a 1x pixmap would be upscaled and blurry on a 2x display.
+        const qreal emptyIconDpr = emptyIcon->devicePixelRatioF();
+        QPixmap folderPixmap = folderIcon.pixmap(qRound(48 * emptyIconDpr),
+                                                  qRound(48 * emptyIconDpr));
+        folderPixmap.setDevicePixelRatio(emptyIconDpr);
+        emptyIcon->setPixmap(folderPixmap);
         emptyIcon->setAlignment(Qt::AlignCenter);
         emptyLayout->addWidget(emptyIcon);
         auto *emptyTitle = new QLabel(tr("No profiles yet"), emptyPage);
