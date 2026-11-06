@@ -96,6 +96,10 @@ Instalou via **pacote**? Use o gerenciador da sua distro:
 - Tudo roda em espaço do usuário: sem daemons, sem rede, sem telemetria;
   escreve apenas em `~/.config/{kwinrc,wayvibrancerc}` —
   [privacidade & pegada](docs/FEATURES.pt.md#privacidade--pegada).
+- Segurança frente a anticheats: a correção de cor ocorre no compositor do
+  desktop, *depois* de o jogo apresentar seus frames — nenhuma interação
+  com o processo do jogo, a mesma categoria da vibrância de driver
+  ([detalhes](docs/FEATURES.pt.md#segurança-frente-a-anticheats)).
 
 ## Roadmap
 

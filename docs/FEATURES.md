@@ -16,6 +16,7 @@ and run. Back to [README](../README.md) · [Roadmap](ROADMAP.md).
 - [Parity with vibrance-gui](#parity-with-vibrance-gui)
 - [Known limitations](#known-limitations)
 - [Privacy & footprint](#privacy--footprint)
+- [Anti-cheat safety](#anti-cheat-safety)
 - [Screenshots](#screenshots)
 
 ## How it works
@@ -201,6 +202,48 @@ Everything runs in **userspace**:
   the system**; inside containers it refuses to write to `/usr` by default;
 - system-wide installation (`sudo cmake --install`) is only the file copy
   step — the software never needs root at runtime.
+
+## Anti-cheat safety
+
+**Can using Way Vibrance get me banned in online games?** By architecture,
+there is no plausible vector — and it is worth understanding why, because
+the answer comes from *where* the effect lives, not from promises.
+
+- Everything runs **inside KWin, the desktop compositor**, as
+  post-processing of the final composited frame — i.e. **after** a game has
+  already rendered and presented its output. The game's process, memory and
+  rendering APIs are never touched; the game cannot even detect it.
+- This is the same mechanism as KDE's own shipped colorblindness-correction
+  effect, using the identical public effect API — from a game's (and an
+  anti-cheat's) point of view it *is* the desktop.
+
+| Known anti-cheat detection vector | Way Vibrance |
+|---|---|
+| Injecting code/DLLs into the game process | not done — no interaction at all |
+| Reading/writing game memory | not done |
+| Hooking the game's DirectX/Vulkan calls | not done — shader runs in the compositor |
+| Kernel drivers / ring-0 components | none (pure userspace) |
+| Modifying game files or binaries | none |
+| Overlays on the game window | none |
+
+**Precedent**: driver-level color adjustments (NVIDIA Digital Vibrance,
+AMD Saturation, vibrance-gui on Windows) are treated as system settings and
+have a long, clean history in competitive play. Wayland simply moves that
+same color grading into the compositor because no user app may program the
+display's CTM there — the result is visually equivalent and equally inert
+with respect to games.
+
+**Honest caveats**: no vendor guarantees third-party software in absolute
+terms, and techniques that do sit close to games (ReShade-style in-game
+injection, overlays, memory readers) are a different category — this
+project is deliberately not one of them. The only game-relevant side effect
+here is the documented direct-scanout one: with a window effect active,
+exclusive fullscreen may go through the compositor (a small latency cost),
+never a detection event.
+
+The footprint is auditable and self-contained: open source, userspace only,
+session D-Bus only, no network, no telemetry (see
+[Privacy & footprint](#privacy--footprint)).
 
 ## Screenshots
 

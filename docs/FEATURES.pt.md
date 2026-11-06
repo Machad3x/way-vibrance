@@ -17,6 +17,7 @@ compilar e usar. Voltar ao [README](../README.pt.md) ·
 - [Paridade com vibrance-gui](#paridade-com-vibrance-gui)
 - [Limitações conhecidas](#limitações-conhecidas)
 - [Privacidade & pegada](#privacidade--pegada)
+- [Segurança frente a anticheats](#segurança-frente-a-anticheats)
 - [Capturas de tela](#capturas-de-tela)
 
 ## Como funciona
@@ -202,6 +203,49 @@ Tudo roda em **espaço de usuário**:
   sistema**; dentro de contêineres recusa escrever em `/usr` por padrão;
 - a instalação em `/usr` (`sudo cmake --install`) é só a cópia de arquivos —
   o software nunca precisa de root em tempo de execução.
+
+## Segurança frente a anticheats
+
+**Usar o Way Vibrance pode levar a ban em jogos online?** Pela arquitetura,
+não existe vetor plausível — e a resposta vem de *onde* o efeito roda, não
+de promessas.
+
+- Tudo acontece **dentro do KWin, o compositor do desktop**, como
+  pós-processamento do frame final composto — ou seja, **depois** de o jogo
+  já ter renderizado e apresentado sua saída. O processo, a memória e as
+  APIs de renderização do jogo nunca são tocados; o jogo nem consegue
+  detectar.
+- É o mesmo mecanismo do efeito de correção de daltonismo que o próprio KDE
+  distribui, usando a idêntica API pública de efeitos — do ponto de vista do
+  jogo (e do anticheat), isso *é* o desktop.
+
+| Vetor de detecção conhecido dos anticheats | Way Vibrance |
+|---|---|
+| Injeção de código/DLL no processo do jogo | não ocorre — nenhuma interação |
+| Leitura/escrita da memória do jogo | não ocorre |
+| Hook nas chamadas DirectX/Vulkan do jogo | não ocorre — o shader roda no compositor |
+| Drivers de kernel / componentes ring-0 | nenhum (puro userspace) |
+| Modificação de arquivos/binários do jogo | nenhuma |
+| Overlays sobre a janela do jogo | nenhum |
+
+**Precedente**: ajustes de cor em nível de driver (NVIDIA Digital Vibrance,
+AMD Saturation, vibrance-gui no Windows) são tratados como configuração de
+sistema e têm longo histórico limpo no cenário competitivo. No Wayland o
+que acontece é a mesma correção de cor migrada para o compositor — porque
+nenhum app de usuário pode programar o CTM do display lá —, com resultado
+visualmente equivalente e igualmente inerte frente aos jogos.
+
+**Ressalvas honestas**: nenhum vendor garante software de terceiros em
+termos absolutos, e técnicas que de fato orbitam o jogo (injeção estilo
+ReShade dentro do processo, overlays, leitores de memória) são outra
+categoria — este projeto é deliberadamente não isso. O único efeito
+colateral relevante para jogos é o de direct scanout já documentado: com um
+efeito de janela ativo, fullscreen exclusivo pode passar pelo compositor
+(custo leve de latência), nunca um evento de detecção.
+
+A pegada é auditável e autossuficiente: código aberto, apenas userspace,
+apenas D-Bus de sessão, sem rede e sem telemetria (ver
+[Privacidade & pegada](#privacidade--pegada)).
 
 ## Capturas de tela
 

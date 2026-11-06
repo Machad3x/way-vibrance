@@ -96,6 +96,10 @@ Installed a **package** instead? Use your package manager:
 - Everything runs in userspace: no daemons, no network, no telemetry;
   writes only to `~/.config/{kwinrc,wayvibrancerc}` —
   [privacy & footprint](docs/FEATURES.md#privacy--footprint).
+- Anti-cheat safety: the grade happens in the desktop compositor, *after*
+  the game presents its frames — no game-process interaction at all, the
+  same category as driver vibrance settings
+  ([details](docs/FEATURES.md#anti-cheat-safety)).
 
 ## Roadmap
 
