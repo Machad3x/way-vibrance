@@ -208,9 +208,10 @@ Tudo roda em **espaço de usuário**:
 - D-Bus apenas no **bus de sessão** (serviço `org.wayvibrance` + o nome de
   componente do tray); nada de bus de sistema;
 - o tray só confia em `org.wayvibrance` quando a conexão dona do nome **é o
-  próprio processo do compositor** (PID cruzado com `org.kde.KWin`); estados
-  vindos de sinais e de method replies passam pela mesma validação de
-  finitude/intervalo/tamanho — um processo que roube o nome primeiro não
+  próprio processo do compositor** — o PID é cruzado com `org.kde.KWin` no
+  attach e revalidado a cada troca de dono; estados vindos de sinais e de
+  method replies passam pela mesma validação de finitude/intervalo/tamanho
+  — um processo que roube o nome primeiro (ou troque de dono depois) não
   consegue falsificar a UI nem alimentar valores hostis;
 - escreve só em `~/.config/kwinrc` (estado do efeito, gerido pelo próprio
   KWin), `~/.config/wayvibrancerc` (hotkey/comportamento) e o `.desktop` de

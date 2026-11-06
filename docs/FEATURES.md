@@ -207,10 +207,12 @@ Everything runs in **userspace**:
 - D-Bus on the **session bus only** (`org.wayvibrance` service + the tray's
   own component name); no system bus usage;
 - the tray trusts `org.wayvibrance` only when the connection owning the
-  name is the **compositor process itself** (PID cross-checked against
-  `org.kde.KWin`, with the state both signals and method replies pass the
-  same finite/range/list validation), so a peer that grabs the name first
-  cannot spoof the UI or feed it hostile values;
+  name is the **compositor process itself** — the PID is cross-checked
+  against `org.kde.KWin` on attach and re-verified on every ownership
+  change, and state arriving via signals as well as method replies passes
+  the same finite/range/list validation — so a peer that grabs the name
+  first (or swaps owners afterwards) cannot spoof the UI or feed it
+  hostile values;
 - writes only to `~/.config/kwinrc` (effect state, managed by KWin itself),
   `~/.config/wayvibrancerc` (hotkey/behaviour) and the optional autostart
   `.desktop`;

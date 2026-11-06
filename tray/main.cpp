@@ -135,9 +135,11 @@ static bool ownerIsCompositor(const QString &owner)
             return true;
         }
     }
-    QFile comm(QStringLiteral("/proc/%1/comm").arg(pid));
-    return comm.open(QIODevice::ReadOnly)
-        && QString::fromLocal8Bit(comm.readAll().trimmed()).startsWith(QLatin1String("kwin"));
+    // Deliberately no /proc/<pid>/comm fallback: a process can rename itself
+    // to "kwin_wayland" (prctl) and pass that check. Every KWin 6 release
+    // owns org.kde.KWin unconditionally — if a candidate PID matches
+    // neither compositor service, it is not the compositor.
+    return false;
 }
 
 /**
@@ -186,10 +188,16 @@ public:
                     if (name != QLatin1String(s_vibranceService)) {
                         return;
                     }
+                    if (newOwner == m_serviceOwner) {
+                        return; // same connection still owns the name
+                    }
+                    // A direct owner swap must not inherit trust: drop the
+                    // existing state first, then let attachInterface()
+                    // re-resolve and re-verify the new owner (compositor-PID
+                    // check included) before any signal reaches the UI.
+                    detachInterface();
                     m_serviceOwner = newOwner;
-                    if (newOwner.isEmpty()) {
-                        detachInterface();
-                    } else if (!m_interface) {
+                    if (!newOwner.isEmpty()) {
                         attachInterface();
                     }
                 });
@@ -604,7 +612,10 @@ private:
             return;
         }
         if (auto *iface = QDBusConnection::sessionBus().interface()) {
-            m_serviceOwner = iface->serviceOwner(QLatin1String(s_vibranceService)).value();
+            const QDBusReply<QString> owner = iface->serviceOwner(QLatin1String(s_vibranceService));
+            if (owner.isValid()) {
+                m_serviceOwner = owner.value();
+            }
         }
         // Trust is anchored to the process, not the name: whoever grabbed
         // org.wayvibrance must BE the compositor running our effect.

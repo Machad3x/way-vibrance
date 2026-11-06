@@ -64,85 +64,72 @@ if [ -n "$QDBUS" ]; then
     "$QDBUS" org.kde.KWin /Effects org.kde.kwin.Effects.unloadEffect wayvibrance >/dev/null 2>&1 || true
 fi
 
-# 2. Remove installed files: the manifest written by the install step
-#    (re-rooted onto --prefix) plus the canonical file set — but every
-#    candidate must pass the allowlist below (absolute, canonical, inside
-#    the prefix, and one of Way Vibrance's own files) before anything is
-#    deleted. A tampered or stale workspace manifest can therefore never
-#    turn sudo rm into an arbitrary deletion tool.
-ALLOWLIST_OK=1
+# 2. Remove installed files. Every candidate — manifest lines re-rooted
+#    onto --prefix as well as the canonical file set — goes through ONE
+#    validation pipeline: canonicalize first (realpath resolves symlinks,
+#    so a planted PREFIX/bin -> /elsewhere cannot smuggle a deletion out
+#    of the prefix), then containment under the real prefix, then the
+#    project's filename allowlist. A missing or failed manifest simply
+#    contributes no candidates; the canonical set alone is still fully
+#    validated. Pure bash: no python needed at uninstall time.
+REALPREFIX="$(realpath -m -- "$PREFIX" 2>/dev/null || printf '%s' "$PREFIX")"
+
+validate_candidate() {
+    local raw="$1" cand rel base
+    cand="$(realpath -m -- "$raw" 2>/dev/null)" || cand="$raw"
+    case "$cand" in
+        "$REALPREFIX"/*) rel="${cand#"$REALPREFIX"/}" ;;
+        *) echo "REJECT $cand (resolves outside prefix)" >&2; return 1 ;;
+    esac
+    base="${cand##*/}"
+    case "$rel" in
+        bin/wayvibrance|bin/wayvibrance-tray|share/applications/org.kde.wayvibrance-tray.desktop) : ;;
+        */plugins/kwin/effects/plugins/wayvibrance.so) : ;;
+        *) echo "REJECT $cand (not a Way Vibrance file)" >&2; return 1 ;;
+    esac
+    printf '%s\n' "$cand"
+}
+
+echo "==> Removing installed files (validated candidates under $REALPREFIX)"
+CANDIDATES=()
 if [ -f build/install_manifest.txt ]; then
-    echo "==> Removing installed files (manifest re-rooted at $PREFIX + canonical set)"
-    mapfile -t MANIFEST < <(
-        python3 - "$PREFIX" build/install_manifest.txt <<'PY'
-import os, re, sys
-
-prefix = os.path.realpath(sys.argv[1])
-
-# Candidates: every manifest line re-rooted onto --prefix, plus the
-# canonical file set (covers manifest-less and drifted trees). All of them
-# go through ONE validation: canonical path first (symlinks resolved, so a
-# PREFIX/bin -> /elsewhere symlink cannot smuggle a deletion out of the
-# prefix), containment under the real prefix, then the project's filename
-# allowlist.
-roots = []
-for line in open(sys.argv[2]):
-    l = line.split("\x00", 1)[0].strip()
-    if not l:
-        continue
-    m = re.match(r"^(.*?)/(bin|lib[^/]*|share|include)/", l)
-    roots.append(prefix + "/" + l[m.start(2):] if m else l)
-for libdir in ("lib", "lib32", "lib64"):
-    for sub in ("plugins/kwin/effects/plugins",
-                "qt6/plugins/kwin/effects/plugins",
-                "qt/plugins/kwin/effects/plugins"):
-        roots.append("%s/%s/%s/wayvibrance.so" % (prefix, libdir, sub))
-roots.append(prefix + "/bin/wayvibrance")
-roots.append(prefix + "/bin/wayvibrance-tray")
-roots.append(prefix + "/share/applications/org.kde.wayvibrance-tray.desktop")
-
-seen, rejected = set(), 0
-for raw in roots:
-    cand = os.path.realpath(raw)
-    rel = os.path.relpath(cand, prefix)
-    base = os.path.basename(cand)
-    outside = rel == os.curdir or rel == os.pardir or rel.startswith(os.pardir + os.sep)
-    owner = (rel in ("bin/wayvibrance", "bin/wayvibrance-tray",
-                     "share/applications/org.kde.wayvibrance-tray.desktop")
-             or (base == "wayvibrance.so" and "/plugins/kwin/effects/plugins/" in cand))
-    if outside:
-        rejected += 1
-        print("REJECT %s (resolves outside prefix)" % cand, file=sys.stderr)
-        continue
-    if not owner:
-        rejected += 1
-        print("REJECT %s (not a Way Vibrance file)" % cand, file=sys.stderr)
-        continue
-    if cand not in seen:
-        seen.add(cand)
-        print(cand)
-
-print("validated %d path(s), rejected %d" % (len(seen), rejected), file=sys.stderr)
-PY
-    ) || ALLOWLIST_OK=0
+    while IFS= read -r l; do
+        l="${l%$'\r'}"
+        [ -n "$l" ] || continue
+        if [[ "$l" =~ /(bin|lib[^/]*|share|include)/(.*)$ ]]; then
+            CANDIDATES+=("$REALPREFIX/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}")
+        else
+            CANDIDATES+=("$l")
+        fi
+    done < build/install_manifest.txt
+else
+    echo "    (no build manifest; canonical file set only)"
 fi
-if [ "${ALLOWLIST_OK}" = 0 ] || [ -z "${MANIFEST[*]:-}" ]; then
-    if [ -f build/install_manifest.txt ]; then
-        echo "==> Manifest failed validation; removing the canonical file set under $PREFIX only"
-    else
-        echo "==> No build manifest found; removing the canonical file set under $PREFIX"
-    fi
-    ALLOWLIST_OK=1
-    MANIFEST=()
-    for f in "$PREFIX"/lib*/plugins/kwin/effects/plugins/wayvibrance.so \
-             "$PREFIX"/lib*/qt6/plugins/kwin/effects/plugins/wayvibrance.so \
-             "$PREFIX"/bin/wayvibrance "$PREFIX"/bin/wayvibrance-tray \
-             "$PREFIX"/share/applications/org.kde.wayvibrance-tray.desktop; do
-        MANIFEST+=("$f")
+for libdir in lib lib32 lib64; do
+    for sub in plugins/kwin/effects/plugins qt6/plugins/kwin/effects/plugins qt/plugins/kwin/effects/plugins; do
+        CANDIDATES+=("$REALPREFIX/$libdir/$sub/wayvibrance.so")
     done
+done
+CANDIDATES+=("$REALPREFIX/bin/wayvibrance" "$REALPREFIX/bin/wayvibrance-tray"
+             "$REALPREFIX/share/applications/org.kde.wayvibrance-tray.desktop")
+
+MANIFEST=()
+REJECTED=0
+for cand in "${CANDIDATES[@]}"; do
+    if out="$(validate_candidate "$cand")"; then
+        [ -n "$out" ] && MANIFEST+=("$out")
+    else
+        REJECTED=$((REJECTED + 1))
+    fi
+done
+if [ "${#MANIFEST[@]}" -gt 0 ]; then
+    mapfile -t MANIFEST < <(printf '%s\n' "${MANIFEST[@]}" | sort -u)
 fi
-mapfile -t MANIFEST < <(printf '%s\n' "${MANIFEST[@]}" | sort -u)
-if [ "$DRY" = 1 ]; then
+echo "    validated ${#MANIFEST[@]} path(s), rejected $REJECTED"
+
+if [ "${#MANIFEST[@]}" = 0 ]; then
+    echo "==> Nothing validated under $REALPREFIX; nothing to remove"
+elif [ "$DRY" = 1 ]; then
     printf 'DRY: rm -f %s\n' "${MANIFEST[@]}"
 else
     if needs_sudo "${MANIFEST[@]}" && command -v sudo >/dev/null 2>&1; then
