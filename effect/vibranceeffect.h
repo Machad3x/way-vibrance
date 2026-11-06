@@ -217,6 +217,7 @@ private:
     struct WindowMatch
     {
         quint64 stamp = 0;
+        bool oversize = false; // identity was capped: excluded from rule matching
         QString idA;
         QString idB;
         QString caption;

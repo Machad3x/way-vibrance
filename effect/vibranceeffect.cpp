@@ -60,6 +60,10 @@ static constexpr int kMaxNameLength = 64;
 // point is only to stop unbounded strings from reaching trim/compare/
 // persist paths. Prefixed patterns get kMaxPatternLength plus slack for
 // the app:/title: marker and surrounding whitespace.
+// Window-supplied identity strings are capped too: the paint path must
+// never be charged for megabyte compares/matches by a hostile client
+// renaming its window in a loop.
+static constexpr int kMaxWindowIdentityLength = 1024;
 static constexpr int kMaxOutputNameLength = 256;
 static constexpr int kMaxPrefixedPatternLength = kMaxPatternLength + 12;
 // Compiled GLShader variants cached for profile gains. Comfortably above
@@ -362,7 +366,8 @@ bool VibranceEffect::rgbGainsActive() const
 // ---------------------------------------------------------------------------
 
 /**
- * Converts a user glob into an anchored, case-insensitive regex. Only '*'
+ * Matches a user glob against a string, anchored and case-insensitive.
+ * Only '*'
  * and '?' act as wildcards; everything else is literal.
  */
 static bool globMatch(const QString &glob, const QString &text)
@@ -687,7 +692,9 @@ QStringList VibranceEffect::appRules() const
 
 QString VibranceEffect::lastFocusedAppId() const
 {
-    return m_lastFocusedAppId;
+    return m_lastFocusedAppId.size() > kMaxWindowIdentityLength
+        ? m_lastFocusedAppId.left(kMaxWindowIdentityLength)
+        : m_lastFocusedAppId;
 }
 
 /**
@@ -698,18 +705,29 @@ QString VibranceEffect::lastFocusedAppId() const
 void VibranceEffect::resolveWindow(EffectWindow *w)
 {
     WindowMatch &entry = m_windowMatch[w];
-    const QString idClass = w->window() ? w->window()->resourceClass() : QString();
-    const QString idName = w->window() ? w->window()->resourceName() : QString();
-    const QString caption = w->caption();
-    if (entry.stamp == m_matchStamp && entry.idA == idClass && entry.idB == idName && entry.caption == caption) {
+    const QString rawClass = w->window() ? w->window()->resourceClass() : QString();
+    const QString rawName = w->window() ? w->window()->resourceName() : QString();
+    const QString rawCaption = w->caption();
+    // Cap before anything touches these (compare/match/store): a window
+    // claiming megabyte identities costs this path at most kMaxWindow-
+    // IdentityLength per frame and is excluded from profile matching —
+    // an oversized identity is not a style anyone can name with a glob.
+    const bool oversize = rawClass.size() > kMaxWindowIdentityLength
+        || rawName.size() > kMaxWindowIdentityLength
+        || rawCaption.size() > kMaxWindowIdentityLength;
+    const QString idClass = oversize ? rawClass.left(kMaxWindowIdentityLength) : rawClass;
+    const QString idName = oversize ? rawName.left(kMaxWindowIdentityLength) : rawName;
+    const QString caption = oversize ? rawCaption.left(kMaxWindowIdentityLength) : rawCaption;
+    if (entry.stamp == m_matchStamp && entry.oversize == oversize && entry.idA == idClass && entry.idB == idName && entry.caption == caption) {
         return;
     }
     entry.stamp = m_matchStamp;
+    entry.oversize = oversize;
     entry.idA = idClass;
     entry.idB = idName;
     entry.caption = caption;
     entry.ruleIndex = -1;
-    if (m_rules.isEmpty()) {
+    if (oversize || m_rules.isEmpty()) {
         return;
     }
     for (int i = 0; i < m_rules.size(); ++i) {
@@ -749,7 +767,9 @@ void VibranceEffect::onWindowActivated(EffectWindow *w)
     if (id.isEmpty() || id.contains(QLatin1String("wayvibrance"), Qt::CaseInsensitive)) {
         return;
     }
-    m_lastFocusedAppId = id;
+    m_lastFocusedAppId = id.size() > kMaxWindowIdentityLength
+        ? id.left(kMaxWindowIdentityLength)
+        : id;
 }
 
 /**

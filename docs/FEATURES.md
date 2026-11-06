@@ -76,7 +76,11 @@ monitor's game keeps its look.
   rather than letting them reach the compositor. Oversized strings are
   refused before any processing happens (raw prefixed patterns ≤ 140
   characters, output names ≤ 256), so no trim/compare/persist path ever
-  sees megabyte input. Patterns are matched by a
+  sees megabyte input. Window-supplied identity strings (title, WM_CLASS,
+  app_id) are likewise capped at 1024 characters before the paint path
+  compares or matches them, and an over-cap identity is simply excluded
+  from profile matching — a client spamming megabyte window names cannot
+  charge the compositor for it. Patterns are matched by a
   dedicated linear-time glob matcher (no regex engine, so no backtracking
   cost to reason about) with behavior verified identical to the previous
   regex translation.

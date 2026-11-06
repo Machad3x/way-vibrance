@@ -77,7 +77,12 @@ no segundo monitor mantêm o visual.
   não finitos em vez de deixá-los chegar ao compositor. Strings acima do
   teto são recusadas antes de qualquer processamento (padrões prefixados
   brutos ≤ 140 caracteres, nomes de saída ≤ 256) — nenhum caminho de
-  trim/comparação/persistência chega a ver entrada de megabytes. Os padrões são
+  trim/comparação/persistência chega a ver entrada de megabytes. As
+  identidades vindas das janelas (título, WM_CLASS, app_id) também são
+  limitadas a 1024 caracteres antes de qualquer comparação no caminho de
+  pintura, e uma identidade acima do teto fica simplesmente fora do match
+  de perfis — um cliente despejando nomes de janela de megabytes não
+  consegue cobrar isso do compositor. Os padrões são
   comparados por um matcher de glob linear dedicado (sem engine de regex,
   logo sem custo de backtracking a considerar), com comportamento verificado
   como idêntico à tradução para regex anterior.

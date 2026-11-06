@@ -41,6 +41,7 @@
 #include <QVBoxLayout>
 
 #include <cmath>
+#include <functional>
 
 #include <KAboutData>
 #include <KConfigGroup>
@@ -50,6 +51,9 @@
 #include <KSharedConfig>
 
 static constexpr auto s_effectId = "wayvibrance";
+
+// Effect-services probe order for ensureEffectLoaded (see tryLoadEffectVia).
+static constexpr const char *kServices[] = {"org.kde.KWin", "org.kde.kwin.Effects"};
 static constexpr auto s_vibranceService = "org.wayvibrance";
 static constexpr auto s_vibrancePath = "/Vibrance";
 static constexpr auto s_vibranceInterface = "org.wayvibrance";
@@ -105,8 +109,9 @@ static bool saneReply(const QDBusReply<double> &reply, double &out)
  * process itself. Checking the well-known name alone is not enough: a
  * session peer can grab it before the effect registers. The authoritative
  * identity is the PID — same as the owner of org.kde.KWin (or the legacy
- * org.kde.kwin.Effects), with /proc/<pid>/comm as a fallback for exotic
- * setups where the compositor exports neither name.
+ * org.kde.kwin.Effects service). There is deliberately no /proc/comm
+ * fallback: prctl(PR_SET_NAME) forges process names trivially, and every
+ * KWin 6 release owns org.kde.KWin unconditionally.
  */
 static bool ownerIsCompositor(const QString &owner)
 {
@@ -224,26 +229,47 @@ public:
         // KWin 6.8+ hosts the /Effects object under the org.kde.KWin service;
         // older setups also exported a dedicated org.kde.kwin.Effects service.
         // Try both, same interface.
-        static constexpr const char *kServices[] = {"org.kde.KWin", "org.kde.kwin.Effects"};
-        for (const char *service : kServices) {
-            QDBusInterface effects(QLatin1String(service),
-                                   QStringLiteral("/Effects"),
-                                   QStringLiteral("org.kde.kwin.Effects"));
-            if (!effects.isValid()) {
-                continue;
-            }
-            const QDBusReply<bool> loaded = effects.call(QStringLiteral("isEffectLoaded"),
-                                                         QString::fromLatin1(s_effectId));
-            if (loaded.isValid() && loaded.value()) {
-                return;
-            }
-            // Fire-and-forget: when the effect comes up it registers
-            // org.wayvibrance and the service watcher attaches to it.
-            effects.asyncCall(QStringLiteral("loadEffect"), QString::fromLatin1(s_effectId));
-            return;
-        }
+        tryLoadEffectVia(QLatin1String(kServices[0]), 1);
     }
 
+private:
+    /**
+     * Async probe chain over the KWin effect services: isEffectLoaded with
+     * a bounded timeout (a wedged compositor cannot freeze the tray), then
+     * fire-and-forget loadEffect. If the effect comes up it registers
+     * org.wayvibrance and the service watcher attaches to it.
+     */
+    void tryLoadEffectVia(const QString &service, int fallbacksLeft)
+    {
+        QDBusInterface effects(service,
+                               QStringLiteral("/Effects"),
+                               QStringLiteral("org.kde.kwin.Effects"));
+        QDBusMessage probe = QDBusMessage::createMethodCall(
+            service, QStringLiteral("/Effects"),
+            QStringLiteral("org.kde.kwin.Effects"),
+            QStringLiteral("isEffectLoaded"));
+        probe.setArguments({QString::fromLatin1(s_effectId)});
+        QDBusPendingCall call = QDBusConnection::sessionBus().asyncCall(probe, kRefreshTimeoutMs);
+        auto *watcher = new QDBusPendingCallWatcher(call, this);
+        connect(watcher, &QDBusPendingCallWatcher::finished, this,
+                [this, service, fallbacksLeft](QDBusPendingCallWatcher *w) {
+                    const bool known = !w->isError() && w->reply().arguments().value(0).toBool();
+                    w->deleteLater();
+                    if (known) {
+                        return; // already running: the watcher will have attached
+                    }
+                    if (w->isError() && fallbacksLeft > 0) {
+                        tryLoadEffectVia(QLatin1String(kServices[1]), fallbacksLeft - 1);
+                        return;
+                    }
+                    QDBusInterface effects(service, QStringLiteral("/Effects"),
+                                           QStringLiteral("org.kde.kwin.Effects"));
+                    effects.asyncCall(QStringLiteral("loadEffect"),
+                                      QString::fromLatin1(s_effectId));
+                });
+    }
+
+public:
     void requestVibrancePercent(int percent)
     {
         m_pendingPercent = percent;
@@ -265,14 +291,36 @@ public:
         }
     }
 
-    /** Output names + descriptions the effect sees ("name|desc" entries). */
-    QStringList fetchScreenList()
+    /** Async screen list pull; result (sanitized) arrives via
+     *  screenListFromEffect(name, entries). A hung compositor can no
+     *  longer block whoever opened the monitor dropdown. */
+    void requestScreenList(const QString &currentName)
     {
         if (!m_interface) {
-            return {};
+            Q_EMIT screenListFromEffect(currentName, {});
+            return;
         }
-        const QDBusReply<QStringList> reply = m_interface->call(QStringLiteral("screenList"));
-        return reply.isValid() ? reply.value() : QStringList();
+        QDBusMessage msg = QDBusMessage::createMethodCall(
+            QString::fromLatin1(s_vibranceService),
+            QString::fromLatin1(s_vibrancePath),
+            QString::fromLatin1(s_vibranceInterface),
+            QStringLiteral("screenList"));
+        QDBusPendingCall call = QDBusConnection::sessionBus().asyncCall(msg, kRefreshTimeoutMs);
+        auto *watcher = new QDBusPendingCallWatcher(call, this);
+        watcher->setProperty("currentName", currentName);
+        connect(watcher, &QDBusPendingCallWatcher::finished, this,
+                [this](QDBusPendingCallWatcher *w) {
+                    const QString name = w->property("currentName").toString();
+                    QStringList entries = w->isError()
+                        ? QStringList()
+                        : w->reply().arguments().value(0).toStringList();
+                    w->deleteLater();
+                    if (entries.size() > 64) { // hostile-emitter ceiling
+                        entries = entries.mid(0, 64);
+                    }
+                    entries.removeIf([](const QString &e) { return e.size() > 512; });
+                    Q_EMIT screenListFromEffect(name, entries);
+                });
     }
 
     /** Empty name selects "automatic" (first output) on the effect side. */
@@ -292,8 +340,9 @@ public:
      * D-Bus signal was ever missed (and on startup, before any change).
      */
     /**
-     * Pull the full effect state asynchronously: nine D-Bus calls with a
-     * bounded timeout never block the GUI thread — a busy or hung KWin can
+     * Pull the full effect state asynchronously: eight state queries (plus
+     * one conditional capability Introspect) with a bounded timeout never
+     * block the GUI thread — a busy or hung KWin can
      * no longer freeze the tray (the old sequential blocking form could
      * stall it for the bus timeout per call). Replies are validated exactly
      * like signal arguments; a monotonic sequence stamp keeps stale rounds
@@ -384,17 +433,37 @@ public:
     }
 
     /** Resource class (Wayland app_id / X11 WM_CLASS) of the last focused app. */
-    QString fetchLastFocusedAppId()
+    /** Async "last focused app id" pull for the dialog pre-fill button;
+     *  cb runs on the reply (empty on error/timeout). A second click while
+     *  pending is ignored instead of stacking dialogs. */
+    void requestLastFocusedAppId(std::function<void(const QString &)> cb)
     {
-        if (!m_interface) {
-            return QString();
+        if (m_lastFocusedPending || !m_interface) {
+            cb(QString());
+            return;
         }
-        const QDBusReply<QString> reply = m_interface->call(QStringLiteral("lastFocusedAppId"));
-        // cosmetic pre-fill only, but a fake service must not be able to
-        // shove a megabyte into the dialog's line edit (which caps at
-        // setMaxLength anyway).
-        return reply.isValid() ? reply.value() : QString();
+        m_lastFocusedPending = true;
+        m_lastFocusedCb = std::move(cb);
+        QDBusMessage msg = QDBusMessage::createMethodCall(
+            QString::fromLatin1(s_vibranceService),
+            QString::fromLatin1(s_vibrancePath),
+            QString::fromLatin1(s_vibranceInterface),
+            QStringLiteral("lastFocusedAppId"));
+        QDBusPendingCall call = QDBusConnection::sessionBus().asyncCall(msg, kRefreshTimeoutMs);
+        auto *watcher = new QDBusPendingCallWatcher(call, this);
+        connect(watcher, &QDBusPendingCallWatcher::finished, this,
+                [this](QDBusPendingCallWatcher *w) {
+                    QString id = w->isError() ? QString() : w->reply().arguments().value(0).toString();
+                    w->deleteLater();
+                    m_lastFocusedPending = false;
+                    id = id.left(1024); // bounded even if the effect were older/hostile
+                    auto cb = std::exchange(m_lastFocusedCb, nullptr);
+                    if (cb) {
+                        cb(id);
+                    }
+                });
     }
+
 
     bool profilesSupported() const { return m_profilesSupported; }
     /** True when the connected effect understands gains + display names. */
@@ -474,6 +543,7 @@ Q_SIGNALS:
     void primaryOnlyFromEffect(bool primaryOnly);
     /** Monitor-picker capability + current selection from the effect. */
     void primaryOutputStateFromEffect(bool supported, const QString &name);
+    void screenListFromEffect(const QString &name, const QStringList &entries);
     void appRulesFromEffect(const QStringList &rules);
     /** False while talking to an effect build that has no per-app profiles. */
     void profilesSupportChanged(bool supported);
@@ -746,7 +816,9 @@ private:
 
     QDBusInterface *m_interface = nullptr;
     QString m_serviceOwner; // unique bus name of the org.wayvibrance owner
-    quint64 m_refreshSeq = 0; // invalidates in-flight refreshes on detach/new round
+    quint64 m_refreshSeq = 0;
+    bool m_lastFocusedPending = false;
+    std::function<void(const QString &)> m_lastFocusedCb; // invalidates in-flight refreshes on detach/new round
     double m_gainsAccum[3] = {1.0, 1.0, 1.0};
     int m_gainMask = 0; // bits 0-2 arrived (r,g,b); bit 3 = poisoned
     QTimer m_timer;
@@ -1247,7 +1319,7 @@ public:
             dialog.exec();
         });
         connect(addFocusedButton, &QPushButton::clicked, this, [controller, this, pushDialog] {
-            const QString id = controller->fetchLastFocusedAppId();
+            controller->requestLastFocusedAppId([controller, this, pushDialog](const QString &id) {
             ProfileDialog dialog(controller->profilesFullApi(), this);
             if (!id.isEmpty()) {
                 dialog.setFields(false, id, 125);
@@ -1260,6 +1332,7 @@ public:
                 dialog.setAppliedOnce(true);
             });
             dialog.exec();
+            });
         });
         connect(removeButton, &QPushButton::clicked, this, [controller, this] {
             const QString pattern = currentProfilePattern();
@@ -1419,9 +1492,14 @@ public:
             controller->requestSetPrimaryOutput(m_primaryOutputCombo->itemData(index).toString());
         });
         connect(controller, &VibranceController::primaryOutputStateFromEffect, this,
-                [this, controller](bool supported, const QString &name) {
+                [controller](bool supported, const QString &name) {
             if (supported) {
-                const QStringList screens = controller->fetchScreenList();
+                controller->requestScreenList(name); // combo rebuilt on screenListFromEffect
+            }
+        });
+        connect(controller, &VibranceController::screenListFromEffect, this,
+                [this](const QString &name, const QStringList &screens) {
+            {
                 m_primaryOutputCombo->clear();
                 m_primaryOutputCombo->addItem(tr("Automatic (first output)"), QString());
                 for (const QString &entry : screens) {
