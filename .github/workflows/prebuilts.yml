@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Existing tag/release to attach artifacts to (empty = triggered ref)"
+        description: "Existing release tag to rebuild/attach (e.g. v0.6.2); empty = the pushed tag"
         required: false
         default: ""
 
@@ -54,8 +54,6 @@ jobs:
     permissions:
       contents: write      # release asset attach/clear only
     steps:
-      - uses: actions/checkout@v4
-
       - name: Resolve release tag (validated)
         # NEVER interpolate ${{ }} into shell: workflow_dispatch inputs are
         # attacker-controllable strings (script injection + token exposure).
@@ -68,6 +66,15 @@ jobs:
           set -euo pipefail
           [[ "$WANT" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid release tag" >&2; exit 1; }
           echo "tag=$WANT" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the tagged source
+        # A workflow_dispatch checkout defaults to the BRANCH it was run
+        # from; re-attaching assets for an old tag must build that tag, not
+        # whatever main points at now (otherwise version and artifacts
+        # disagree). The ref comes from the validated step output.
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.rel.outputs.tag }}
 
       - name: Build + install-verify all supported releases
         run: CONTAINER_TOOL=docker ./scripts/package.sh
