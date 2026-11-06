@@ -82,7 +82,7 @@ Installed a **package** instead? Use your package manager:
 
 - **Tray/window**: sliders for vibrance + RGB channels — each percentage has
   a small circular **↺** button that restores just that slider to its default
-  (100%) — presets (50/100/125/150/200%), per-app profile editor, hotkey
+  (100%) — presets (0/25/50/75/100/125/150/175/200%), per-app profile editor, hotkey
   field, on/off switches for *Enabled* and *Behaviour* with monitor picker.
   Cards and switches follow the system light/dark colour scheme; the profiles
   pane explains itself when empty; R/G/B sliders carry accessible channel

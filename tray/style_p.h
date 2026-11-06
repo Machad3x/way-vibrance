@@ -258,7 +258,8 @@ inline QString buildAppStyle(const QPalette &palette)
         " border: 1px solid %BORDER%;"
         " border-left: none;"
         " border-radius: 0px;"
-        " padding: 5px 12px;"
+        // Compact enough that nine equal segments fit the profile dialog.
+        " padding: 4px 6px;"
         " min-height: 22px;"
         "}"
         "QPushButton[wvPreset=\"true\"][wvSegFirst=\"true\"] {"

@@ -5,9 +5,11 @@
 
     Segmented preset control for the tray window and the per-app dialog.
 
-    The presets (50/100/125/150/200%) behave as one exclusive group: exactly
-    one button is checked while the slider sits on a preset value, and none
-    is checked for any other value (a slider can be dragged to 137%).
+    The presets (0/25/50/75/100/125/150/175/200%) behave as one exclusive
+    group: exactly one button is checked while the slider sits on a preset
+    value, and none is checked for any other value (a slider can be dragged
+    to 137%). The set is shared by the tray window, the profile dialog and
+    the tray menu so the three can never drift apart.
 
     Two details matter here:
 
@@ -29,12 +31,22 @@
 
 namespace wvseg {
 
-/// Creates one segment. The caller owns it (usually by adding it to a group
-/// and a layout); the properties are read by the application stylesheet.
+/// The single preset set for every vibrance control in the app.
+inline constexpr int kPresetValues[] = {0, 25, 50, 75, 100, 125, 150, 175, 200};
+inline constexpr int kPresetCount =
+    int(sizeof(kPresetValues) / sizeof(kPresetValues[0]));
+
+/**
+ * Creates one segment. The caller owns it (usually by adding it to a group
+ * and a layout); the properties are read by the application stylesheet.
+ * The button expands horizontally so a row of segments spans the card at
+ * equal widths instead of hugging one side.
+ */
 inline QPushButton *createPresetButton(QWidget *parent, const QString &text, bool first, bool last)
 {
     auto *button = new QPushButton(text, parent);
     button->setCheckable(true);
+    button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     // Exclusivity is provided by QButtonGroup; autoExclusive would fight it
     // when the group has to clear every button for a non-preset value.
     button->setAutoExclusive(false);

@@ -1007,11 +1007,11 @@ public:
         m_presetGroup->setExclusive(true);
         auto *presetRow = new QHBoxLayout();
         presetRow->setSpacing(0);
-        const int presetValues[] = {50, 100, 125, 150, 200};
-        for (int i = 0; i < 5; ++i) {
-            const int percent = presetValues[i];
+        for (int i = 0; i < wvseg::kPresetCount; ++i) {
+            const int percent = wvseg::kPresetValues[i];
             auto *presetButton = wvseg::createPresetButton(
-                vibranceBox, QStringLiteral("%1%").arg(percent), i == 0, i == 4);
+                vibranceBox, QStringLiteral("%1%").arg(percent), i == 0,
+                i == wvseg::kPresetCount - 1);
             presetButton->setProperty("wvPresetValue", percent);
             m_presetGroup->addButton(presetButton);
             connect(presetButton, &QPushButton::clicked, this, [this, percent] {
@@ -1020,9 +1020,10 @@ public:
                 // already-active preset must still re-assert the group state.
                 wvseg::syncPresetGroup(m_presetGroup, m_vibSlider->value());
             });
-            presetRow->addWidget(presetButton);
+            // Equal expanding segments: the row spans the card instead of
+            // hugging the left with a gap on the right.
+            presetRow->addWidget(presetButton, 1);
         }
-        presetRow->addStretch();
         vibranceLayout->addLayout(presetRow);
         connect(m_vibSlider, &QSlider::valueChanged, this, [this](int percent) {
             wvseg::syncPresetGroup(m_presetGroup, percent);
@@ -1277,11 +1278,11 @@ public:
         m_presetGroup->setExclusive(true);
         auto *presets = new QHBoxLayout();
         presets->setSpacing(0);
-        const int presetValues[] = {50, 100, 125, 150, 200};
-        for (int i = 0; i < 5; ++i) {
-            const int percent = presetValues[i];
+        for (int i = 0; i < wvseg::kPresetCount; ++i) {
+            const int percent = wvseg::kPresetValues[i];
             auto *button = wvseg::createPresetButton(
-                vibranceGroup, QStringLiteral("%1%").arg(percent), i == 0, i == 4);
+                vibranceGroup, QStringLiteral("%1%").arg(percent), i == 0,
+                i == wvseg::kPresetCount - 1);
             button->setProperty("wvPresetValue", percent);
             m_presetGroup->addButton(button);
             connect(button, &QPushButton::clicked, this, [this, percent] {
@@ -1296,9 +1297,8 @@ public:
                     m_controller->requestVibrancePercent(percent);
                 }
             });
-            presets->addWidget(button);
+            presets->addWidget(button, 1);
         }
-        presets->addStretch();
         vibranceLayout->addLayout(presets);
         wvseg::syncPresetGroup(m_presetGroup, m_slider->value());
         outerLayout->addWidget(vibranceGroup);
@@ -1614,7 +1614,10 @@ public:
         // the loaded effect supports choosing the output.
         m_primaryOutputRow = new QWidget(behaviourGroup);
         auto *outputRowLayout = new QHBoxLayout(m_primaryOutputRow);
-        outputRowLayout->setContentsMargins(16, 0, 0, 0);
+        // Align with the switch rows above: the label starts where the
+        // switch text starts (its 4 px focus-ring inset) and the combo
+        // ends where the switch track ends (its 2 px edge inset).
+        outputRowLayout->setContentsMargins(4, 0, 2, 0);
         outputRowLayout->addWidget(new QLabel(tr("Primary monitor:"), m_primaryOutputRow));
         m_primaryOutputCombo = new QComboBox(m_primaryOutputRow);
         m_primaryOutputCombo->addItem(tr("Automatic (first output)"), QString());
@@ -2012,7 +2015,7 @@ int main(int argc, char *argv[])
     QObject::connect(&controller, &VibranceController::enabledFromEffect, enabledAction, &QAction::setChecked);
 
     menu->addSeparator();
-    for (int percent : {50, 100, 125, 150, 200}) {
+    for (int percent : wvseg::kPresetValues) {
         auto *action = menu->addAction(QObject::tr("Set %1%").arg(percent));
         QObject::connect(action, &QAction::triggered, &controller, [percent, &controller] {
             controller.ensureEffectLoaded();

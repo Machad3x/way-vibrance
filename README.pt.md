@@ -82,7 +82,7 @@ Instalou via **pacote**? Use o gerenciador da sua distro:
 
 - **Bandeja/janela**: sliders de vibrância e canais RGB — cada porcentagem
   tem um pequeno botão circular **↺** que restaura só aquele slider ao padrão
-  (100%) — presets (50/100/125/150/200%), editor de perfis por app, campo de
+  (100%) — presets (0/25/50/75/100/125/150/175/200%), editor de perfis por app, campo de
   hotkey e chaves liga/desliga para *Enabled* e *Comportamento* com seletor
   de monitor. Cartões e chaves seguem o tema claro/escuro do sistema; o painel
   de perfis se explica quando está vazio; os sliders R/G/B têm cores de canal

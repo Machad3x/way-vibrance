@@ -67,7 +67,7 @@ no segundo monitor mantêm o visual.
   amigáveis e selo `[+RGB …]`; *"De último
   foco…"* pré-preenche o app_id da última janela usada — dois cliques para
   cadastrar um jogo; duplo clique abre a janela de edição (sliders + presets
-  50/100/125/150/200% + Reset RGB); cada porcentagem tem um pequeno botão
+  0/25/50/75/100/125/150/175/200% + Reset RGB); cada porcentagem tem um pequeno botão
   circular **↺** que restaura só aquele slider ao padrão (100%) — vibrância
   global, cada canal RGB e cada slider do editor de perfis; **Apply** comita
   ao vivo, **OK** fecha
@@ -208,7 +208,7 @@ Instalações via pacote se desfazem pelo gerenciador de pacotes.
 | Ajuste ao vivo | driver API | D-Bus `org.wayvibrance` | ✅ |
 | Persistência | registro | `kwinrc` | ✅ |
 | Bandeja + autostart | ✅ | ✅ | ✅ |
-| Presets | perfis | 50/100/125/150/200% | ✅ |
+| Presets | perfis | 0/25/50/75/100/125/150/175/200% | ✅ |
 | Hotkey para alternar | ✅ | KGlobalAccel, tecla configurável | ✅ |
 | Afetar só um monitor | — (via perfis) | modo "monitor primário" (saída escolhida) | ✅ |
 | Perfis automáticos por app/jogo | ✅ (foco de janela) | regras por janela (`app:`/`title:` glob) — vale até sem foco | ✅ |

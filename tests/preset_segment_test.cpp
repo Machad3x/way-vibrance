@@ -20,7 +20,9 @@
          the control is built);
       6. keyboard focus stays visible on a checked segment without changing
          its size (the checked border and a highlight focus border would be
-         the same colour, hiding the ring).
+         the same colour, hiding the ring);
+      7. the shared preset set is the documented 0-200% by 25 steps and
+         every segment expands, so a row spans its card at equal widths.
 
     Runs offscreen, no session bus needed. Exit code != 0 on failure.
 */
@@ -76,39 +78,57 @@ int main(int argc, char **argv)
     }
 
     // ---- 2-4. selection semantics against a real group ----
+    // (built from the shared preset set the tray, dialog and menu use;
+    //  indices: 0=0%, 1=25%, 2=50%, 3=75%, 4=100%, 5=125%, 6=150%, 7=175%,
+    //  8=200%)
     {
+        check(wvseg::kPresetCount == 9, "nine presets");
+        check(wvseg::kPresetValues[0] == 0 && wvseg::kPresetValues[8] == 200,
+              "presets span 0% to 200%");
+        bool stepsOf25 = true;
+        for (int i = 1; i < wvseg::kPresetCount; ++i) {
+            stepsOf25 = stepsOf25 && wvseg::kPresetValues[i] - wvseg::kPresetValues[i - 1] == 25;
+        }
+        check(stepsOf25, "presets step by 25");
+
         QWidget parent;
         QButtonGroup group(&parent);
         group.setExclusive(true);
-        QPushButton *buttons[5] = {};
-        const int values[5] = {50, 100, 125, 150, 200};
-        for (int i = 0; i < 5; ++i) {
-            buttons[i] = wvseg::createPresetButton(&parent, QStringLiteral("%1%").arg(values[i]),
-                                                   i == 0, i == 4);
-            buttons[i]->setProperty("wvPresetValue", values[i]);
+        QPushButton *buttons[wvseg::kPresetCount] = {};
+        for (int i = 0; i < wvseg::kPresetCount; ++i) {
+            buttons[i] = wvseg::createPresetButton(
+                &parent, QStringLiteral("%1%").arg(wvseg::kPresetValues[i]), i == 0,
+                i == wvseg::kPresetCount - 1);
+            buttons[i]->setProperty("wvPresetValue", wvseg::kPresetValues[i]);
             group.addButton(buttons[i]);
+            check(buttons[i]->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding,
+                  "segments expand to fill the row");
+            check(buttons[i]->property("wvSegFirst").toBool() == (i == 0)
+                      && buttons[i]->property("wvSegLast").toBool()
+                          == (i == wvseg::kPresetCount - 1),
+                  "outer segments carry the edge properties");
         }
 
         wvseg::syncPresetGroup(&group, 100);
-        check(group.checkedButton() == buttons[1], "100% selected by sync");
-        check(buttons[1]->isChecked(), "100% button checked");
+        check(group.checkedButton() == buttons[4], "100% selected by sync");
+        check(buttons[4]->isChecked(), "100% button checked");
 
         // A value dragged between presets must leave the row with no
         // selection (an exclusive group cannot do this by itself).
         wvseg::syncPresetGroup(&group, 137);
         check(group.checkedButton() == nullptr, "no preset checked for a custom value");
-        check(!buttons[1]->isChecked(), "previous selection cleared");
+        check(!buttons[4]->isChecked(), "previous selection cleared");
         check(group.exclusive(), "exclusivity restored after clearing");
 
         wvseg::syncPresetGroup(&group, 200);
-        check(group.checkedButton() == buttons[4], "200% selected by sync");
-        check(buttons[4]->isChecked(), "200% button checked");
-        check(!buttons[0]->isChecked() && !buttons[1]->isChecked(), "only one segment checked");
+        check(group.checkedButton() == buttons[8], "200% selected by sync");
+        check(buttons[8]->isChecked(), "200% button checked");
+        check(!buttons[0]->isChecked() && !buttons[4]->isChecked(), "only one segment checked");
 
         // Clicking a segment drives the slider; the valueChanged handler
         // re-syncs. Clicking the already-active one still re-asserts it.
         QSlider slider;
-        slider.setRange(50, 200);
+        slider.setRange(0, 200);
         slider.setValue(200);
         QObject::connect(&slider, &QSlider::valueChanged, [&group](int percent) {
             wvseg::syncPresetGroup(&group, percent);
@@ -119,20 +139,20 @@ int main(int argc, char **argv)
             });
         }
 
-        buttons[0]->click();
+        buttons[2]->click();
         check(slider.value() == 50, "click moves the slider");
-        check(group.checkedButton() == buttons[0], "click selects its segment");
+        check(group.checkedButton() == buttons[2], "click selects its segment");
 
-        buttons[0]->click(); // unchanged value: no valueChanged emitted
-        check(group.checkedButton() == buttons[0], "re-click keeps the segment checked");
+        buttons[2]->click(); // unchanged value: no valueChanged emitted
+        check(group.checkedButton() == buttons[2], "re-click keeps the segment checked");
         check(group.exclusive(), "exclusivity intact after re-click");
 
         group.setExclusive(false);
-        buttons[2]->click();
-        check(!buttons[0]->isChecked() && buttons[2]->isChecked(), "click with lifted exclusivity");
+        buttons[5]->click();
+        check(!buttons[2]->isChecked() && buttons[5]->isChecked(), "click with lifted exclusivity");
         group.setExclusive(true);
         wvseg::syncPresetGroup(&group, 50);
-        check(group.checkedButton() == buttons[0], "sync recovers from a manual check");
+        check(group.checkedButton() == buttons[2], "sync recovers from a manual check");
     }
 
     // ---- 5. keyboard focus is visible on a checked segment ----
