@@ -121,7 +121,15 @@ inline ThemeColors themeColors(const QPalette &palette)
     // Secondary text needs a little more foreground in a light scheme to
     // stay above 4.5:1 on the card surface (checked by the theme test).
     colors.muted = blend(colors.window, colors.text, dark ? 0.55 : 0.65);
+    // The slider groove is a functional track, not decoration: at low
+    // values the filled sub-page is empty, so the groove alone has to show
+    // where the slider is. A flat 12-14% blend sat at 1.3-1.5:1 against the
+    // card in real Breeze schemes, so adapt it like the switch outline
+    // until it reaches WCAG 1.4.11 3:1 on the card.
     colors.groove = blend(colors.card, colors.text, dark ? 0.14 : 0.12);
+    for (int step = 1; step <= 20 && contrastRatio(colors.groove, colors.card) < 3.0; ++step) {
+        colors.groove = blend(colors.card, colors.text, step * 0.05);
+    }
 
     for (int i = 0; i < 3; ++i) {
         const QColor base = baseChannelColor(i);
@@ -233,8 +241,13 @@ inline QString buildAppStyle(const QPalette &palette)
         "QSlider[wvChannel=\"G\"]::sub-page:horizontal:disabled { background-color: %MUTED%; }"
         "QSlider[wvChannel=\"B\"]::handle:horizontal:disabled { background-color: %MUTED%; }"
         "QSlider[wvChannel=\"B\"]::sub-page:horizontal:disabled { background-color: %MUTED%; }"
-        "QSlider::handle:horizontal:hover { border-color: %HIGHLIGHT%; }"
-        "QSlider::handle:horizontal:focus { border-color: %HIGHLIGHT%; }"
+        // The generic handle is filled with Highlight, so a Highlight
+        // hover/focus border would be invisible on it (the same reason the
+        // checked preset focus uses ButtonText). The scheme foreground
+        // contrasts with the fill in both light and dark schemes, and with
+        // the channel fills of the R/G/B handles this rule also reaches.
+        "QSlider::handle:horizontal:hover { border-color: %BUTTON_TEXT%; }"
+        "QSlider::handle:horizontal:focus { border-color: %BUTTON_TEXT%; }"
         "QSlider::handle:horizontal:disabled { background-color: %MUTED%; }"
         "QSlider::sub-page:horizontal:disabled { background-color: %MUTED%; }"
 

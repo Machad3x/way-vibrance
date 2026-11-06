@@ -9,7 +9,10 @@
          produce different sheets and a custom highlight colour really ends
          up in the sheet (no hard-coded Breeze Dark colours);
       2. secondary text and normal text keep >= 4.5:1 contrast on the card
-         surface in both schemes (WCAG AA for small text);
+         surface in both schemes (WCAG AA for small text), and the slider
+         groove keeps >= 3:1 (WCAG 1.4.11) so the track stays visible at
+         low values, with the handle hover/focus border in the scheme
+         foreground instead of the handle's own fill colour;
       3. it contains no external resource loading — no url(), image(),
          @import or file:// (a stylesheet must never read user-writable
          paths), and it is brace-balanced;
@@ -106,6 +109,21 @@ static void checkSheet(const char *label, const QPalette &palette)
     // 2. contrast (AA) of normal and secondary text on the card surface.
     check(contrastRatio(colors.text, colors.card) >= 4.5, "text contrast >= 4.5 on card");
     check(contrastRatio(colors.muted, colors.card) >= 4.5, "muted contrast >= 4.5 on card");
+
+    // The slider groove is the track itself: it must stay visible at low
+    // values where the filled sub-page is empty (WCAG 1.4.11, 3:1).
+    check(contrastRatio(colors.groove, colors.card) >= 3.0, "groove contrast >= 3 on card");
+    check(colors.groove != colors.card, "groove differs from the card");
+    check(sheet.contains(colors.groove.name()), "groove colour from palette adaptation");
+
+    // The generic handle is filled with Highlight: a Highlight hover/focus
+    // border would be invisible on it, so both use the scheme foreground.
+    check(sheet.contains(QStringLiteral("QSlider::handle:horizontal:focus { border-color: ")
+                         + colors.buttonText.name()),
+          "slider handle focus uses the foreground, not the fill");
+    check(sheet.contains(QStringLiteral("QSlider::handle:horizontal:hover { border-color: ")
+                         + colors.buttonText.name()),
+          "slider handle hover uses the foreground, not the fill");
 
     // 5. channel colours stay semantic, distinct and legible on the card.
     for (int i = 0; i < 3; ++i) {

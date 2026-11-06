@@ -1285,8 +1285,14 @@ public:
             button->setProperty("wvPresetValue", percent);
             m_presetGroup->addButton(button);
             connect(button, &QPushButton::clicked, this, [this, percent] {
+                const int before = m_slider->value();
                 setPercent(percent); // also re-syncs the segmented state
-                if (m_controller) {
+                // setValue() already requests the percent through the
+                // valueChanged path when the value actually changes; asking
+                // again would double the D-Bus traffic. Only the
+                // already-active preset (no valueChanged) needs this
+                // explicit re-assert against the effect.
+                if (percent == before && m_controller) {
                     m_controller->requestVibrancePercent(percent);
                 }
             });
@@ -1339,8 +1345,13 @@ public:
         }
         auto *rgbReset = new QPushButton(tr("Reset RGB"), rgbGroup);
         connect(rgbReset, &QPushButton::clicked, this, [this] {
+            const bool alreadyNeutral = m_redSlider->value() == 100
+                && m_greenSlider->value() == 100 && m_blueSlider->value() == 100;
             setGains(100, 100, 100);
-            if (m_controller) {
+            // As with the presets above: each changed slider already pushes
+            // its gain through valueChanged, so the explicit request is
+            // only needed when everything was already neutral.
+            if (alreadyNeutral && m_controller) {
                 m_controller->requestRGBGains(1.0, 1.0, 1.0);
             }
         });
