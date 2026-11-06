@@ -32,3 +32,12 @@ target_include_directories(preset_segment_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
 add_test(NAME preset_segment_test COMMAND preset_segment_test)
 set_tests_properties(preset_segment_test PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Versioned guarantee for the on/off switch: QCheckBox semantics, whole-row
+# hit target, keyboard activation, visible focus and palette/direction.
+add_executable(switch_widget_test switch_widget_test.cpp)
+target_link_libraries(switch_widget_test PRIVATE Qt6::Widgets)
+target_include_directories(switch_widget_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
+add_test(NAME switch_widget_test COMMAND switch_widget_test)
+set_tests_properties(switch_widget_test PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

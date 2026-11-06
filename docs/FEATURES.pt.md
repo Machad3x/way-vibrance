@@ -80,6 +80,11 @@ no segundo monitor mantêm o visual.
   no cartão, então continuam legíveis em temas claros); os presets formam um
   controle segmentado com exatamente um segmento ativo enquanto o valor é um
   preset; o *Clear* do campo de hotkey é uma ação compacta com ícone.
+  *Enabled* e cada opção de *Comportamento* são chaves liga/desliga desenhadas
+  com a mesma paleta: a linha inteira é a área de clique, Espaço e Enter
+  alternam, o foco é um anel visível que não desloca o layout e uma chave
+  desabilitada escurece sem esconder o botão. Não há animação, logo não há
+  laço de repintura nem movimento a suprimir.
 - **Persistência**: `[Effect-wayvibrance][WayVibranceAppRules]` no `kwinrc`.
 - **Limites** (contenção de DoS local): no máximo 64 perfis, padrão com até
   128 caracteres, nome de exibição com até 64; efeito, diálogo do tray e
@@ -118,7 +123,7 @@ no segundo monitor mantêm o visual.
   *Configurações do Sistema → Atalhos de Teclado → Applications → Way
   Vibrance* (mudanças feitas lá são absorvidas). Requer o tray rodando —
   ative "Start with Plasma".
-- **Comportamento** (um check cada): *Abrir direto na bandeja ao iniciar*,
+- **Comportamento** (uma chave cada): *Abrir direto na bandeja ao iniciar*,
   *Iniciar com o Plasma* (autostart, exibido com ícone correto no KCM de
   Autostart), *Afetar apenas o monitor primário* — a correção vale só para a
   **saída escolhida**: um dropdown *Primary monitor* aparece sob o check

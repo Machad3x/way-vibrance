@@ -78,7 +78,11 @@ monitor's game keeps its look.
   the foreground until they reach WCAG AA on the card, so they stay legible
   on light themes); presets are one segmented control with exactly one
   active segment while the value is a preset; the hotkey field's *Clear* is
-  a compact icon action.
+  a compact icon action. *Enabled* and every *Behaviour* option are on/off
+  switches drawn from the same palette: the whole row is the hit target,
+  Space and Enter toggle, focus is a visible ring that does not move the
+  layout, and a disabled switch dims without hiding the knob. There is no
+  animation, so no repaint loop and no motion to suppress.
 - **Persistence**: `[Effect-wayvibrance][WayVibranceAppRules]` in `kwinrc`.
 - **Limits** (local-DoS containment): at most 64 profiles, pattern up to
   128 characters, display name up to 64; the effect, the tray dialog and the
@@ -114,11 +118,11 @@ monitor's game keeps its look.
   in *System Settings → Shortcuts → Applications → Way Vibrance* (changes
   there are mirrored back). Requires the tray running — enable "Start with
   Plasma".
-- **Behaviour** (one check each): *Open directly to the tray on startup*,
+- **Behaviour** (one switch each): *Open directly to the tray on startup*,
   *Start with Plasma* (autostart, shown with the proper icon in Plasma's
   Autostart settings), *Only affect the primary monitor* — grading applies
   only to the **chosen output**: a *Primary monitor* dropdown appears under
-  the checkbox (picks by connector name, e.g. `DP-1`; "Automatic" = KWin's
+  the switch (picks by connector name, e.g. `DP-1`; "Automatic" = KWin's
   first output; the picked output's list refreshes on hotplug).
 
 ## CLI reference

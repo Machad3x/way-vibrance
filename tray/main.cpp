@@ -11,6 +11,7 @@
 #include "resetbutton_p.h"
 #include "segmented_p.h"
 #include "style_p.h"
+#include "switch_p.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -1268,7 +1269,7 @@ public:
         row->addWidget(createResetButton(vibranceGroup, m_slider, 100), 0, Qt::AlignVCenter);
         vibranceLayout->addLayout(row);
 
-        m_enabledCheck = new QCheckBox(tr("Enabled"), vibranceGroup);
+        m_enabledCheck = new wvswitch::Switch(tr("Enabled"), vibranceGroup);
         m_enabledCheck->setChecked(true);
         vibranceLayout->addWidget(m_enabledCheck);
 
@@ -1581,15 +1582,17 @@ public:
         connect(m_loadButton, &QPushButton::clicked, this, [controller] { controller->ensureEffectLoaded(); });
         outerLayout->addWidget(m_loadButton);
 
-        // Behaviour settings — one check per option, like Enabled.
+        // Behaviour settings — one switch per option, like Enabled. The
+        // switch subclass keeps the QCheckBox semantics (role, Space), so
+        // the existing toggled() wiring below is unchanged.
         auto *behaviourGroup = new QGroupBox(tr("Behaviour"), central);
         auto *behaviourLayout = new QVBoxLayout(behaviourGroup);
-        behaviourLayout->setSpacing(6);
-        m_startHiddenCheck = new QCheckBox(tr("Open directly to the tray on startup"), behaviourGroup);
+        behaviourLayout->setSpacing(4);
+        m_startHiddenCheck = new wvswitch::Switch(tr("Open directly to the tray on startup"), behaviourGroup);
         m_startHiddenCheck->setChecked(storedStartHidden());
-        m_autostartCheck = new QCheckBox(tr("Start with Plasma (autostart)"), behaviourGroup);
+        m_autostartCheck = new wvswitch::Switch(tr("Start with Plasma (autostart)"), behaviourGroup);
         m_autostartCheck->setChecked(autostartEnabled());
-        m_primaryOnlyCheck = new QCheckBox(tr("Only affect the primary monitor"), behaviourGroup);
+        m_primaryOnlyCheck = new wvswitch::Switch(tr("Only affect the primary monitor"), behaviourGroup);
         // Monitor picker, shown only while "primary monitor" mode is on and
         // the loaded effect supports choosing the output.
         m_primaryOutputRow = new QWidget(behaviourGroup);
@@ -1845,10 +1848,10 @@ private:
     QLabel *m_greenLabel = nullptr;
     QLabel *m_blueLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
-    QCheckBox *m_enabledCheck = nullptr;
-    QCheckBox *m_startHiddenCheck = nullptr;
-    QCheckBox *m_autostartCheck = nullptr;
-    QCheckBox *m_primaryOnlyCheck = nullptr;
+    wvswitch::Switch *m_enabledCheck = nullptr;
+    wvswitch::Switch *m_startHiddenCheck = nullptr;
+    wvswitch::Switch *m_autostartCheck = nullptr;
+    wvswitch::Switch *m_primaryOnlyCheck = nullptr;
     QWidget *m_primaryOutputRow = nullptr;
     QComboBox *m_primaryOutputCombo = nullptr;
     QPushButton *m_loadButton = nullptr;

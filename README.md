@@ -83,10 +83,12 @@ Installed a **package** instead? Use your package manager:
 - **Tray/window**: sliders for vibrance + RGB channels — each percentage has
   a small circular **↺** button that restores just that slider to its default
   (100%) — presets (50/100/125/150/200%), per-app profile editor, hotkey
-  field, behaviour checkboxes with monitor picker. Cards follow the system
-  light/dark colour scheme; the profiles pane explains itself when empty;
-  R/G/B sliders carry accessible channel colours and presets are a single
-  segmented control.
+  field, on/off switches for *Enabled* and *Behaviour* with monitor picker.
+  Cards and switches follow the system light/dark colour scheme; the profiles
+  pane explains itself when empty; R/G/B sliders carry accessible channel
+  colours and presets are a single segmented control. Switches toggle with
+  Space or Enter, keep a visible focus ring and still show their position
+  when disabled; they have no animation.
 - **CLI**: `wayvibrance --help` shows everything
   (`wayvibrance 1.5`, `toggle`, `rgb …`, `primary …`, `app list|set|del|name|reset|focused`).
 
