@@ -121,9 +121,10 @@ monitor's game keeps its look.
 - **Behaviour** (one switch each): *Open directly to the tray on startup*,
   *Start with Plasma* (autostart, shown with the proper icon in Plasma's
   Autostart settings), *Only affect the primary monitor* — grading applies
-  only to the **chosen output**: a *Primary monitor* dropdown appears under
-  the switch (picks by connector name, e.g. `DP-1`; "Automatic" = KWin's
-  first output; the picked output's list refreshes on hotplug).
+  only to the **chosen output**: a *Primary monitor* dropdown sits under
+  the switch, faded and disabled while the option is off so the card never
+  jumps (picks by connector name, e.g. `DP-1`; "Automatic" = KWin's first
+  output; the picked output's list refreshes on hotplug).
 
 ## CLI reference
 

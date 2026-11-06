@@ -1604,14 +1604,18 @@ public:
         // the existing toggled() wiring below is unchanged.
         auto *behaviourGroup = new QGroupBox(tr("Behaviour"), central);
         auto *behaviourLayout = new QVBoxLayout(behaviourGroup);
-        behaviourLayout->setSpacing(4);
+        // Roomier than the other cards' 6 px: switch rows are a single
+        // text line tall, so 4 px read as crowded. 8 px keeps the window
+        // inside a 1366x768 work area with every row visible.
+        behaviourLayout->setSpacing(8);
         m_startHiddenCheck = new wvswitch::Switch(tr("Open directly to the tray on startup"), behaviourGroup);
         m_startHiddenCheck->setChecked(storedStartHidden());
         m_autostartCheck = new wvswitch::Switch(tr("Start with Plasma (autostart)"), behaviourGroup);
         m_autostartCheck->setChecked(autostartEnabled());
         m_primaryOnlyCheck = new wvswitch::Switch(tr("Only affect the primary monitor"), behaviourGroup);
-        // Monitor picker, shown only while "primary monitor" mode is on and
-        // the loaded effect supports choosing the output.
+        // Monitor picker: always visible (when the loaded effect supports
+        // choosing the output) but disabled while "primary monitor" mode
+        // is off, so toggling the switch never makes the card jump.
         m_primaryOutputRow = new QWidget(behaviourGroup);
         auto *outputRowLayout = new QHBoxLayout(m_primaryOutputRow);
         // Align with the switch rows above: the label starts where the
@@ -1622,7 +1626,10 @@ public:
         m_primaryOutputCombo = new QComboBox(m_primaryOutputRow);
         m_primaryOutputCombo->addItem(tr("Automatic (first output)"), QString());
         outputRowLayout->addWidget(m_primaryOutputCombo, 1);
+        // Initial state; updateOutputRowState() below keeps it in sync
+        // with the switch and with the effect's capability.
         m_primaryOutputRow->setVisible(false);
+        m_primaryOutputRow->setEnabled(false);
         behaviourLayout->addWidget(m_startHiddenCheck);
         behaviourLayout->addWidget(m_autostartCheck);
         behaviourLayout->addWidget(m_primaryOnlyCheck);
@@ -1637,7 +1644,7 @@ public:
             Q_EMIT autostartChanged(on);
         });
         connect(m_primaryOnlyCheck, &QCheckBox::toggled, this, [controller, this](bool on) {
-            updateOutputRowVisibility();
+            updateOutputRowState();
             if (!m_updatingFromEffect) {
                 controller->requestPrimaryOnly(on);
             }
@@ -1648,7 +1655,8 @@ public:
             controller->requestSetPrimaryOutput(m_primaryOutputCombo->itemData(index).toString());
         });
         connect(controller, &VibranceController::primaryOutputStateFromEffect, this,
-                [controller](bool supported, const QString &name) {
+                [controller, this](bool supported, const QString &name) {
+            updateOutputRowState();
             if (supported) {
                 controller->requestScreenList(name); // combo rebuilt on screenListFromEffect
             }
@@ -1669,7 +1677,7 @@ public:
                 const int idx = m_primaryOutputCombo->findData(name);
                 m_primaryOutputCombo->setCurrentIndex(idx < 0 ? 0 : idx);
             }
-            updateOutputRowVisibility();
+            updateOutputRowState();
         });
         connect(controller, &VibranceController::primaryOnlyFromEffect, this, [this](bool on) {
             m_updatingFromEffect = true;
@@ -1783,10 +1791,14 @@ private:
         m_valueLabel->setText(QStringLiteral("%1%").arg(percent));
     }
 
-    void updateOutputRowVisibility()
+    // The picker row stays put (no layout jump when the switch flips):
+    // it is visible whenever the effect supports choosing the output, and
+    // disabled — faded label and combo — while the mode itself is off.
+    void updateOutputRowState()
     {
-        m_primaryOutputRow->setVisible(m_primaryOnlyCheck->isChecked()
-                                       && m_controller && m_controller->primaryOutputSupported());
+        const bool supported = m_controller && m_controller->primaryOutputSupported();
+        m_primaryOutputRow->setVisible(supported);
+        m_primaryOutputRow->setEnabled(supported && m_primaryOnlyCheck->isChecked());
     }
 
     void rebuildProfileList(const QStringList &entries)

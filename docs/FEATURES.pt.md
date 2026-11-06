@@ -126,9 +126,10 @@ no segundo monitor mantêm o visual.
 - **Comportamento** (uma chave cada): *Abrir direto na bandeja ao iniciar*,
   *Iniciar com o Plasma* (autostart, exibido com ícone correto no KCM de
   Autostart), *Afetar apenas o monitor primário* — a correção vale só para a
-  **saída escolhida**: um dropdown *Primary monitor* aparece sob o check
-  (seleciona por nome de conector, ex.: `DP-1`; "Automatic" = primeira saída
-  do KWin; a lista atualiza em hotplug).
+  **saída escolhida**: um dropdown *Primary monitor* fica sob a chave,
+  esmaecido e desabilitado enquanto a opção está desligada, para o cartão
+  nunca saltar (seleciona por nome de conector, ex.: `DP-1`; "Automatic" =
+  primeira saída do KWin; a lista atualiza em hotplug).
 
 ## Referência da CLI
 
