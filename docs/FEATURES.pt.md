@@ -62,7 +62,9 @@ no segundo monitor mantêm o visual.
 - **Nome de exibição**: rótulo cosmético na lista (`org.kde.dolphin` vira
   "Dolphin" automaticamente; sua string sobrescreve). O casamento usa
   sempre o padrão.
-- **Bandeja**: lista com nomes amigáveis e selo `[+RGB …]`; *"De último
+- **Bandeja**: as consultas de estado são assíncronas com timeout limitado — um
+  compositor ocupado ou travado não consegue congelar a UI; lista com nomes
+  amigáveis e selo `[+RGB …]`; *"De último
   foco…"* pré-preenche o app_id da última janela usada — dois cliques para
   cadastrar um jogo; duplo clique abre a janela de edição (sliders + presets
   50/100/125/150/200% + Reset RGB); **Apply** comita ao vivo, **OK** fecha
@@ -76,6 +78,12 @@ no segundo monitor mantêm o visual.
   comparados por um matcher de glob linear dedicado (sem engine de regex,
   logo sem custo de backtracking a considerar), com comportamento verificado
   como idêntico à tradução para regex anterior.
+  As combinações de ganho por perfil têm cache de shaders limitado a 72
+  variantes compiladas: ganhos exatos compilam sob demanda e, com o cache
+  cheio, variantes que nenhuma janela usa são recicladas primeiro —
+  recorrendo à variante mais próxima (<1% de diferença visual) se todas
+  estiverem em tela — então editar ganhos sem fim não faz a memória da GPU
+  nem o trabalho do compilador crescerem.
 
 ## Hotkey & configurações de comportamento
 

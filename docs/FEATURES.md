@@ -60,7 +60,9 @@ monitor's game keeps its look.
 - **Display name**: purely cosmetic label in the list (`org.kde.dolphin`
   shown as "Dolphin" automatically; your own string overrides). Matching
   always uses the pattern.
-- **Tray**: list with friendly names and `[+RGB …]` badge; *From last
+- **Tray**: state pulls are async with a bounded timeout — a busy or
+  wedged compositor cannot freeze the tray UI; list with friendly names
+  and `[+RGB …]` badge; *From last
   focused…* pre-fills the app id of the last-used window (two clicks to
   enroll a game); double-click opens the editor window (sliders + presets
   50/100/125/150/200% + Reset RGB); **Apply** commits live, **OK** closes
@@ -75,6 +77,11 @@ monitor's game keeps its look.
   dedicated linear-time glob matcher (no regex engine, so no backtracking
   cost to reason about) with behavior verified identical to the previous
   regex translation.
+  Per-profile gain combinations are shader-cached in a bounded pool (72
+  compiled variants): exact gains compile on demand, and once full the
+  cache first recycles variants no window is using — falling back to the
+  nearest cached variant (<1% visual difference) if all are on screen —
+  so endless gain-editing cannot grow GPU memory or compiler work.
 
 ## Hotkey & behaviour settings
 

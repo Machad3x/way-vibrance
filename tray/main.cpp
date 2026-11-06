@@ -14,6 +14,7 @@
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
+#include <QDBusPendingCallWatcher>
 #include <QDBusReply>
 #include <QDBusServiceWatcher>
 #include <QDialog>
@@ -61,6 +62,7 @@ static constexpr int kRgbMaxPercent = 200;
 // Same ceilings the effect enforces on D-Bus input — the tray mirrors them
 // so a hostile emitter cannot inflate the UI list or the parsed fields.
 static constexpr int kMaxProfiles = 64;
+static constexpr int kRefreshTimeoutMs = 3000;
 static constexpr int kMaxPatternLength = 128;
 static constexpr int kMaxNameLength = 64;
 
@@ -289,59 +291,44 @@ public:
      * had changed remotely, so every slider/checkbox is truthful even if a
      * D-Bus signal was ever missed (and on startup, before any change).
      */
+    /**
+     * Pull the full effect state asynchronously: nine D-Bus calls with a
+     * bounded timeout never block the GUI thread — a busy or hung KWin can
+     * no longer freeze the tray (the old sequential blocking form could
+     * stall it for the bus timeout per call). Replies are validated exactly
+     * like signal arguments; a monotonic sequence stamp keeps stale rounds
+     * (and anything in flight across a detach) from touching the UI.
+     */
     void refreshState()
     {
         if (!m_interface) {
             return;
         }
-        const QDBusReply<double> value = m_interface->call(QStringLiteral("vibrance"));
-        double vibrance = 1.0;
-        if (saneReply(value, vibrance)) {
-            onVibranceChanged(vibrance);
-        }
-        const QDBusReply<bool> enabled = m_interface->call(QStringLiteral("enabled"));
-        if (enabled.isValid()) {
-            onEnabledChanged(enabled.value());
-        }
-        const QDBusReply<bool> primary = m_interface->call(QStringLiteral("primaryOnly"));
-        if (primary.isValid()) {
-            onPrimaryOnlyChanged(primary.value());
-        }
-        // Monitor-picking support: older effects answer UnknownMethod; we
-        // then hide the dropdown instead of pushing into a void.
-        const QDBusReply<QString> primaryOut = m_interface->call(QStringLiteral("primaryOutputName"));
-        if (primaryOut.isValid() != m_primaryOutputSupported) {
-            m_primaryOutputSupported = primaryOut.isValid();
-        }
-        Q_EMIT primaryOutputStateFromEffect(m_primaryOutputSupported,
-                                            primaryOut.isValid() ? primaryOut.value().left(kMaxPatternLength)
-                                                                  : QString());
-        const QDBusReply<double> red = m_interface->call(QStringLiteral("redGain"));
-        const QDBusReply<double> green = m_interface->call(QStringLiteral("greenGain"));
-        const QDBusReply<double> blue = m_interface->call(QStringLiteral("blueGain"));
-        double r = 1.0, g = 1.0, b = 1.0;
-        if (saneReply(red, r) && saneReply(green, g) && saneReply(blue, b)) {
-            onRGBGainsChanged(r, g, b);
-        }
-        // Per-app profiles: an effect older than this feature answers
-        // UnknownMethod — hide the UI instead of pretending the rules apply.
-        const QDBusReply<QStringList> rules = m_interface->call(QStringLiteral("appRules"));
-        setProfilesSupported(rules.isValid());
-        if (rules.isValid()) {
-            onAppRulesChanged(sanitizeRuleList(rules.value()));
-            // Fine-grained capability: profiles with per-channel gains and
-            // display names need the newer setAppRuleFull/setAppRuleName.
-            QDBusMessage intro = QDBusMessage::createMethodCall(
+        const quint64 seq = ++m_refreshSeq;
+        m_gainMask = 0;
+        const auto issue = [this, seq](const QString &method) {
+            QDBusMessage msg = QDBusMessage::createMethodCall(
                 QString::fromLatin1(s_vibranceService),
                 QString::fromLatin1(s_vibrancePath),
-                QStringLiteral("org.freedesktop.DBus.Introspectable"),
-                QStringLiteral("Introspect"));
-            const QDBusReply<QString> xml = QDBusConnection::sessionBus().call(intro);
-            m_profilesFull = xml.isValid() && xml.value().contains(QLatin1String("setAppRuleFull"));
-        } else {
-            m_profilesFull = false;
+                QString::fromLatin1(s_vibranceInterface),
+                method);
+            const QDBusPendingCall call =
+                QDBusConnection::sessionBus().asyncCall(msg, kRefreshTimeoutMs);
+            auto *watcher = new QDBusPendingCallWatcher(call, this);
+            watcher->setProperty("kind", method);
+            watcher->setProperty("seq", seq);
+            connect(watcher, &QDBusPendingCallWatcher::finished,
+                    this, &VibranceController::onRefreshReply);
+        };
+        static const char *const kQueries[] = {
+            "vibrance", "enabled", "primaryOnly", "primaryOutputName",
+            "redGain", "greenGain", "blueGain", "appRules",
+        };
+        for (const char *query : kQueries) {
+            issue(QLatin1String(query));
         }
     }
+
 
     void requestRGBGains(double red, double green, double blue)
     {
@@ -559,6 +546,81 @@ private Q_SLOTS:
         Q_EMIT primaryOnlyFromEffect(primaryOnly);
     }
 
+    /** One completed refresh query (see refreshState). */
+    void onRefreshReply(QDBusPendingCallWatcher *watcher)
+    {
+        const quint64 seq = watcher->property("seq").toULongLong();
+        const QString kind = watcher->property("kind").toString();
+        const bool isError = watcher->isError();
+        const QDBusMessage reply = watcher->reply(); // is an error message when isError
+        watcher->deleteLater();
+        if (seq != m_refreshSeq || !m_interface) {
+            return; // stale round (or detached meanwhile)
+        }
+        const QList<QVariant> args = reply.arguments();
+        double factor = 1.0;
+        if (kind == QLatin1String("vibrance")) {
+            if (!isError && args.size() == 1 && saneFactor(args.at(0), factor)) {
+                onVibranceChanged(factor);
+            }
+        } else if (kind == QLatin1String("enabled")) {
+            if (!isError && args.size() == 1 && args.at(0).metaType().id() == QMetaType::Bool) {
+                onEnabledChanged(args.at(0).toBool());
+            }
+        } else if (kind == QLatin1String("primaryOnly")) {
+            if (!isError && args.size() == 1 && args.at(0).metaType().id() == QMetaType::Bool) {
+                onPrimaryOnlyChanged(args.at(0).toBool());
+            }
+        } else if (kind == QLatin1String("primaryOutputName")) {
+            // Monitor-picking support: older effects answer UnknownMethod; we
+            // then hide the dropdown instead of pushing into a void.
+            m_primaryOutputSupported = !isError;
+            Q_EMIT primaryOutputStateFromEffect(m_primaryOutputSupported,
+                                                m_primaryOutputSupported
+                                                    ? args.value(0).toString().left(kMaxPatternLength)
+                                                    : QString());
+        } else if (kind == QLatin1String("redGain") || kind == QLatin1String("greenGain")
+                   || kind == QLatin1String("blueGain")) {
+            const int channel = kind.at(0) == QLatin1Char('r') ? 0 : (kind.at(0) == QLatin1Char('g') ? 1 : 2);
+            const int bit = 1 << channel;
+            if (isError || args.size() != 1 || !saneFactor(args.at(0), factor)) {
+                m_gainMask |= 8; // poison: do not push a partial/invalid triplet
+                return;
+            }
+            m_gainsAccum[channel] = factor;
+            m_gainMask |= bit;
+            if ((m_gainMask & 0b111) == 0b111 && !(m_gainMask & 8)) {
+                onRGBGainsChanged(m_gainsAccum[0], m_gainsAccum[1], m_gainsAccum[2]);
+            }
+        } else if (kind == QLatin1String("appRules")) {
+            // Per-app profiles: an effect older than this feature answers
+            // UnknownMethod — hide the UI instead of pretending the rules apply.
+            setProfilesSupported(!isError);
+            if (!isError) {
+                onAppRulesChanged(sanitizeRuleList(args.value(0).toStringList()));
+                // Fine-grained capability: profiles with per-channel gains and
+                // display names need the newer setAppRuleFull/setAppRuleName.
+                QDBusMessage introspect = QDBusMessage::createMethodCall(
+                    QString::fromLatin1(s_vibranceService),
+                    QString::fromLatin1(s_vibrancePath),
+                    QStringLiteral("org.freedesktop.DBus.Introspectable"),
+                    QStringLiteral("Introspect"));
+                const QDBusPendingCall call =
+                    QDBusConnection::sessionBus().asyncCall(introspect, kRefreshTimeoutMs);
+                auto *intro = new QDBusPendingCallWatcher(call, this);
+                intro->setProperty("kind", QStringLiteral("__introspect"));
+                intro->setProperty("seq", m_refreshSeq);
+                connect(intro, &QDBusPendingCallWatcher::finished,
+                        this, &VibranceController::onRefreshReply);
+            } else {
+                m_profilesFull = false;
+            }
+        } else if (kind == QLatin1String("__introspect")) {
+            m_profilesFull = !isError && reply.arguments().value(0).toString()
+                                          .contains(QLatin1String("setAppRuleFull"));
+        }
+    }
+
     /** What the global hotkey runs: an atomic, server-side flip. */
     void toggleVibrance()
     {
@@ -660,6 +722,7 @@ private:
                        QString(),
                        this,
                        SLOT(onSignal(QDBusMessage)));
+        ++m_refreshSeq; // drop any in-flight refresh replies with the old owner
         delete m_interface;
         m_interface = nullptr;
         m_lastSent = -1.0;
@@ -683,6 +746,9 @@ private:
 
     QDBusInterface *m_interface = nullptr;
     QString m_serviceOwner; // unique bus name of the org.wayvibrance owner
+    quint64 m_refreshSeq = 0; // invalidates in-flight refreshes on detach/new round
+    double m_gainsAccum[3] = {1.0, 1.0, 1.0};
+    int m_gainMask = 0; // bits 0-2 arrived (r,g,b); bit 3 = poisoned
     QTimer m_timer;
     int m_pendingPercent = -1;
     double m_lastSent = -1.0;

@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 // The drawWindow() hook this effect overrides is present with compatible
 // semantics since KWin 6.0 (effects API 0.236). Fail with a clear message on
@@ -55,6 +56,11 @@ static constexpr auto s_rulesGroupName = "WayVibranceAppRules";
 static constexpr int kMaxAppRules = 64;
 static constexpr int kMaxPatternLength = 128;
 static constexpr int kMaxNameLength = 64;
+// Compiled GLShader variants cached for profile gains. Comfortably above
+// any legitimate working set (kMaxAppRules + the global set), yet bounded
+// so endless gain-editing churn cannot grow the pool (or the GPU memory
+// and shader-compiler work behind it) without limit.
+static constexpr int kMaxShaderVariants = 72;
 
 // qBound happily forwards NaN (every comparison against it is false), so
 // finiteness is validated before clamping everywhere a factor enters.
@@ -767,8 +773,46 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
     const QString key = gainsKey(gains);
     const auto it = m_shaderPool.constFind(key);
     if (it != m_shaderPool.constEnd()) {
-        return it.value().get();
+        return it.value().shader.get();
     }
+
+    // Cache full: first recycle the variants no window is using any more
+    // (typical case — repeated edits of the same profile's gains). The
+    // in-use check is mandatory: WindowMatch keeps raw pointers to what it
+    // applied, and we are only ever called with a GL context current
+    // (drawWindow), so freeing here is otherwise safe.
+    if (m_shaderPool.size() >= kMaxShaderVariants) {
+        for (auto pit = m_shaderPool.begin(); pit != m_shaderPool.end();) {
+            const GLShader *candidate = pit.value().shader.get();
+            const bool inUse = std::any_of(m_windowMatch.cbegin(), m_windowMatch.cend(),
+                                           [candidate](const WindowMatch &m) {
+                                               return m.appliedShader == candidate;
+                                           });
+            if (!inUse) {
+                pit = m_shaderPool.erase(pit);
+            } else {
+                ++pit;
+            }
+        }
+    }
+    // Every slot is on screen (legitimate heavy use): reuse the nearest
+    // cached variant instead of compiling forever. Channel distance is in
+    // 0-2 gain units, so the visual difference stays well under 1%.
+    if (m_shaderPool.size() >= kMaxShaderVariants) {
+        GLShader *nearest = nullptr;
+        float best = std::numeric_limits<float>::max();
+        for (const ShaderVariant &variant : m_shaderPool) {
+            const float d = (variant.gains - gains).lengthSquared();
+            if (d < best) {
+                best = d;
+                nearest = variant.shader.get();
+            }
+        }
+        if (nearest) {
+            return nearest;
+        }
+    }
+
     auto fresh = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
                                                                    QLatin1String(s_shaderPath));
     if (!fresh) {
@@ -779,7 +823,7 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
         fresh->setUniform("rgbGain", gains);
     }
     GLShader *raw = fresh.get();
-    m_shaderPool.insert(key, std::shared_ptr<GLShader>(std::move(fresh)));
+    m_shaderPool.insert(key, ShaderVariant{std::move(fresh), gains});
     return raw;
 }
 

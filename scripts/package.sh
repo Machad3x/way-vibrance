@@ -49,9 +49,14 @@ JBERS="${PACKAGE_JOBS_PER_BUILD:-$(( NCPU / JOBS ))}"
 DEFAULT_TARGETS=(fedora-44 fedora-45 debian-13 debian-14
                  ubuntu-26.04 ubuntu-26.10 arch)
 
-PRIST="/tmp/wv-pristine-$$"
-STAGE_ROOT="/tmp/wv-stage-$$"
-trap 'chmod -R u+rwX "$STAGE_ROOT" "$PRIST" 2>/dev/null; rm -rf "$STAGE_ROOT" "$PRIST"' EXIT
+# Private, unpredictable work root (mktemp refuses to reuse an existing
+# path, closing the /tmp collision and symlink-planting windows that a
+# predictable /tmp/wv-*-$$ name would leave open).
+WORKROOT="$(mktemp -d "${TMPDIR:-/tmp}/way-vibrance-package.XXXXXXXX")" \
+    || { echo "==> could not create private work dir" >&2; exit 1; }
+PRIST="$WORKROOT/pristine"
+STAGE_ROOT="$WORKROOT/stage"
+trap 'chmod -R u+rwX "$WORKROOT" 2>/dev/null; rm -rf "$WORKROOT"' EXIT
 
 if ! git diff --quiet HEAD 2>/dev/null; then
     echo "==> NOTE: working tree differs from HEAD; the source tarball is HEAD." >&2

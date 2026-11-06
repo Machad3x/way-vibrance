@@ -56,19 +56,53 @@ EOF
 elif [ -n "${GITHUB_TOKEN:-}" ]; then
     echo "==> Using GITHUB_TOKEN via API"
     API="https://api.github.com"
-    AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
-    OWNER="$(curl -fsS "$API/user" "${AUTH[@]}" | sed -n 's/.*"login":[[:space:]]*"\([^"]*\)".*/\1/p')"
-    code=$(curl -fsS -o /dev/null -w "%{http_code}" "$API/repos/$OWNER/$REPO_NAME" "${AUTH[@]}" || echo 000)
+
+    # The token never appears in process arguments (ps-visible) nor in any
+    # git remote URL. curl reads it from a 0600 config file inside a
+    # private temp dir; git gets it through GIT_ASKPASS, which receives it
+    # only via the environment. An EXIT trap wipes the temp dir and puts a
+    # pre-existing origin back exactly as it was, even if set -e aborts us
+    # mid-way (a token-bearing remote must never survive a failed run).
+    TMPD="$(mktemp -d "${TMPDIR:-/tmp}/way-vibrance-publish.XXXXXXXX")" || {
+        echo "==> mktemp failed" >&2; exit 1; }
+    ORIGIN_OLD="$(git remote get-url origin 2>/dev/null || true)"
+    cleanup_secret() { chmod -R u+rwX "$TMPD" 2>/dev/null; rm -rf "$TMPD" 2>/dev/null || true; }
+    onfail() {
+        cleanup_secret
+        if [ -n "$ORIGIN_OLD" ]; then
+            git remote set-url origin "$ORIGIN_OLD" 2>/dev/null || true
+        else
+            git remote remove origin 2>/dev/null || true
+        fi
+    }
+    trap onfail EXIT
+
+    CFG="$TMPD/curlrc"
+    printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/vnd.github+json"\n' \
+        "$GITHUB_TOKEN" >"$CFG"
+    chmod 600 "$CFG"
+    ASKPASS="$TMPD/askpass"
+    cat >"$ASKPASS" <<'WVASKEOF'
+#!/bin/sh
+case "$1" in
+  *[Uu]sername*) echo x-access-token ;;
+  *) echo "$GITHUB_TOKEN" ;;
+esac
+WVASKEOF
+    chmod 700 "$ASKPASS"
+
+    OWNER="$(curl -fsS --config "$CFG" "$API/user" | sed -n 's/.*"login":[[:space:]]*"\([^"]*\)".*/\1/p')"
+    code=$(curl -fsS -o /dev/null -w "%{http_code}" --config "$CFG" "$API/repos/$OWNER/$REPO_NAME" || echo 000)
     if [ "$code" != "200" ]; then
         priv=$([ "$VISIBILITY" = "private" ] && echo true || echo false)
-        curl -fsS "$API/user/repos" "${AUTH[@]}" \
+        curl -fsS --config "$CFG" "$API/user/repos" \
             -d "{\"name\":\"$REPO_NAME\",\"description\":\"$DESCRIPTION\",\"private\":$priv,\"has_issues\":true}" >/dev/null
     fi
-    REMOTE="https://x-access-token:$GITHUB_TOKEN@github.com/$OWNER/$REPO_NAME.git"
+    REMOTE="https://github.com/$OWNER/$REPO_NAME.git"
     git remote remove origin 2>/dev/null || true
     git remote add origin "$REMOTE"
     git tag -a "$TAG" -m "Way Vibrance $TAG" 2>/dev/null || true
-    git push -u origin main --follow-tags
+    GITHUB_TOKEN="$GITHUB_TOKEN" GIT_ASKPASS="$ASKPASS" GIT_TERMINAL_PROMPT=0 git -c credential.helper= push -u origin main --follow-tags
     json=$(python3 - "$TAG" "$VERSION" <<'PY'
 import json, sys
 tag, ver = sys.argv[1], sys.argv[2]
@@ -89,8 +123,11 @@ notes = (f"Release {ver}.\n\n"
 print(json.dumps({"tag_name": tag, "name": f"Way Vibrance {ver}", "body": notes, "draft": False, "prerelease": False}))
 PY
 )
-    curl -fsS "$API/repos/$OWNER/$REPO_NAME/releases" "${AUTH[@]}" -d "$json" >/dev/null
-    git remote set-url origin "https://github.com/$OWNER/$REPO_NAME.git"
+    curl -fsS --config "$CFG" "$API/repos/$OWNER/$REPO_NAME/releases" -d "$json" >/dev/null
+    # success: origin already holds the clean (secret-free) URL — keep it,
+    # drop the emergency-restore trap and wipe the credential files.
+    trap - EXIT
+    cleanup_secret
 else
     echo "No credentials found. Do one of:" >&2
     echo "  a) sudo pacman -S github-cli && gh auth login -h github.com -p https -s repo,read:org -w" >&2

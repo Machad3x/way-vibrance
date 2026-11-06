@@ -256,7 +256,11 @@ private:
     QHash<EffectWindow *, WindowMatch> m_windowMatch;
     quint64 m_matchStamp = 0;
     QString m_lastFocusedAppId;
-    QHash<QString, std::shared_ptr<GLShader>> m_shaderPool; // per-gain-set shaders
+    struct ShaderVariant {
+        std::shared_ptr<GLShader> shader;
+        QVector3D gains; // kept for the bounded-cache nearest-variant path
+    };
+    QHash<QString, ShaderVariant> m_shaderPool; // per-gain-set shaders (capped)
     bool m_shaderFailed = false;
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;
