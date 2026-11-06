@@ -309,7 +309,6 @@ void VibranceEffect::reloadConfig()
         }
         m_rules.append(rule);
     }
-    rebuildMatchers();
     invalidateMatchCache();
 
     updateShaderUniforms();
@@ -340,41 +339,45 @@ bool VibranceEffect::rgbGainsActive() const
  * Converts a user glob into an anchored, case-insensitive regex. Only '*'
  * and '?' act as wildcards; everything else is literal.
  */
-static QRegularExpression globToMatcher(const QString &glob)
+static bool globMatch(const QString &glob, const QString &text)
 {
-    QString regex;
-    regex.reserve(glob.size() + 8);
-    int literalStart = 0;
-    QChar previousWildcard; // last wildcard emitted, to collapse '*'-runs only
-    for (int i = 0; i < glob.size(); ++i) {
-        const QChar c = glob.at(i);
-        if (c != QLatin1Char('*') && c != QLatin1Char('?')) {
-            continue;
-        }
-        if (i > literalStart) {
-            regex += QRegularExpression::escape(glob.mid(literalStart, i - literalStart));
-            previousWildcard = QChar(); // literal text interrupts a wildcard run
-        }
-        if (c == QLatin1Char('*')) {
-            // Collapse only consecutive '*' ("**" means "*" in glob, so the
-            // language is unchanged) — several ".*" in a row would only add
-            // redundant backtracking paths for the engine.
-            if (previousWildcard != QLatin1Char('*')) {
-                regex += QStringLiteral(".*");
-            }
+    // Iterative wildcards matcher with a single rewind point: worst case is
+    // a linear scan per '*' run (bounded by glob.size() * text.size() with a
+    // tiny constant) — unlike a translated regex, patterns like "*a*a*a…"
+    // cannot explode into backtracking that stalls the compositor on the
+    // paint path. Semantics equal the previous anchored, case-insensitive
+    // translation: '*' spans any run, '?' consumes exactly one character
+    // (including one UTF-16 code unit, as PCRE's '.' did), literals match
+    // case-insensitively per Qt's char rule (equal after toLower or
+    // toUpper), and the whole string must match.
+    int g = 0;
+    int t = 0;
+    int starAt = -1;
+    int resumeAt = -1;
+    const auto sameCase = [](QChar a, QChar b) {
+        return a == b || a.toLower() == b.toLower() || a.toUpper() == b.toUpper();
+    };
+    while (t < text.size()) {
+        if (g < glob.size() && glob.at(g) == QLatin1Char('?')) {
+            ++g;
+            ++t;
+        } else if (g < glob.size() && glob.at(g) != QLatin1Char('*') && sameCase(glob.at(g), text.at(t))) {
+            ++g;
+            ++t;
+        } else if (g < glob.size() && glob.at(g) == QLatin1Char('*')) {
+            starAt = g++; // consume the star; let the rewind below feed it chars
+            resumeAt = t;
+        } else if (starAt >= 0) {
+            g = starAt + 1;
+            t = ++resumeAt;
         } else {
-            // '?' always consumes exactly one character ("??" -> "..", and a
-            // '?' after a literal '.' stays a '?'); no collapsing here.
-            regex += QLatin1Char('.');
+            return false;
         }
-        previousWildcard = c;
-        literalStart = i + 1;
     }
-    if (literalStart < glob.size()) {
-        regex += QRegularExpression::escape(glob.mid(literalStart));
+    while (g < glob.size() && glob.at(g) == QLatin1Char('*')) {
+        ++g;
     }
-    return QRegularExpression(QRegularExpression::anchoredPattern(regex),
-                              QRegularExpression::CaseInsensitiveOption);
+    return g == glob.size();
 }
 
 QString VibranceEffect::serializedRule(const AppRule &rule)
@@ -457,12 +460,6 @@ static QVector3D clampGains(qreal red, qreal green, qreal blue)
     return QVector3D(channel(red), channel(green), channel(blue));
 }
 
-void VibranceEffect::rebuildMatchers()
-{
-    for (AppRule &rule : m_rules) {
-        rule.matcher = globToMatcher(rule.pattern);
-    }
-}
 
 void VibranceEffect::invalidateMatchCache()
 {
@@ -550,7 +547,6 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
         m_rules.append(rule);
     }
 
-    rebuildMatchers();
     invalidateMatchCache();
     updateRedirects();
     Q_EMIT appRulesChanged(appRules());
@@ -675,16 +671,16 @@ void VibranceEffect::resolveWindow(EffectWindow *w)
     }
     for (int i = 0; i < m_rules.size(); ++i) {
         const AppRule &rule = m_rules.at(i);
-        if (!rule.matcher.isValid()) {
+        if (rule.pattern.isEmpty()) {
             continue;
         }
         if (rule.titleMatch) {
-            if (rule.matcher.match(caption).hasMatch()) {
+            if (globMatch(rule.pattern, caption)) {
                 entry.ruleIndex = i;
                 break;
             }
-        } else if ((rule.matcher.match(idClass).hasMatch() && !idClass.isEmpty())
-                   || (rule.matcher.match(idName).hasMatch() && !idName.isEmpty())) {
+        } else if ((globMatch(rule.pattern, idClass) && !idClass.isEmpty())
+                   || (globMatch(rule.pattern, idName) && !idName.isEmpty())) {
             entry.ruleIndex = i;
             break;
         }
@@ -827,7 +823,10 @@ void VibranceEffect::setVibrance(qreal value)
     m_vibrance = value;
     Q_EMIT vibranceChanged(m_vibrance);
     m_persistTimer->start();
-    effects->addRepaintFull();
+    // Goes through the redirect reconciliation: neutralizing the last
+    // non-default global may turn the effect inactive, and an inactive
+    // effect gets no drawWindow() call to release its grabs itself.
+    updateRedirects();
 }
 
 qreal VibranceEffect::vibrance() const

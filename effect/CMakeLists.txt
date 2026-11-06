@@ -13,6 +13,13 @@ add_library(wayvibrance MODULE
     wayvibrance.qrc
 )
 
+# KWin's factory macros produce Q_OBJECT code that AUTOMOC does not know by
+# name; teach it so main.moc is generated and the (misleading) "no Q_OBJECT
+# macro" warning disappears without dropping the moc include.
+set_target_properties(wayvibrance PROPERTIES
+    AUTOMOC_MACRO_NAMES "Q_OBJECT;Q_GADGET;Q_NAMESPACE;Q_NAMESPACE_EXPORT;KWIN_EFFECT_FACTORY;KWIN_EFFECT_FACTORY_SUPPORTED"
+)
+
 target_link_libraries(wayvibrance
     PRIVATE
         Qt6::Core

@@ -11,7 +11,6 @@
 #include <effect/offscreeneffect.h>
 
 #include <QDBusAbstractAdaptor>
-#include <QRegularExpression>
 #include <QRegion>
 #include <QVector3D>
 
@@ -213,7 +212,6 @@ private:
                              // the friendly form of the pattern (matching
                              // keeps using the pattern)
         bool hasGains() const { return !qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f)); }
-        QRegularExpression matcher; // compiled in rebuildMatchers()
     };
 
     struct WindowMatch
@@ -230,7 +228,6 @@ private:
     };
 
     void resolveWindow(EffectWindow *w);
-    void rebuildMatchers();
     void invalidateMatchCache();
     static QString serializedRule(const AppRule &rule);
     static bool parseRule(const QString &serialized, AppRule &ruleOut);

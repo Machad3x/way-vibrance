@@ -71,7 +71,10 @@ monitor's game keeps its look.
 - **Limits** (local-DoS containment): at most 64 profiles, pattern up to
   128 characters, display name up to 64; the effect, the tray dialog and the
   config load all enforce the same ceilings, rejecting non-finite values
-  rather than letting them reach the compositor.
+  rather than letting them reach the compositor. Patterns are matched by a
+  dedicated linear-time glob matcher (no regex engine, so no backtracking
+  cost to reason about) with behavior verified identical to the previous
+  regex translation.
 
 ## Hotkey & behaviour settings
 
@@ -127,10 +130,11 @@ Profile serialization: `kind:pattern|vibrance[|r,g,b[|display-name]]`
 
 `scripts/uninstall.sh [--prefix PATH] [--purge-config] [--dry-run]` removes
 a manually installed build, hot-unloading the effect first; every removal
-candidate (build manifest included) is validated against the prefix and a
-file allowlist before anything is deleted, so a tampered workspace manifest
-can never smuggle unrelated paths into `sudo rm`. Package installs are
-uninstalled with the package manager.
+candidate (build manifest included, symlink-resolved and re-rooted paths
+first canonicalized) is validated against the real prefix and a file
+allowlist before anything is deleted, so neither a tampered workspace
+manifest nor a planted `bin ->` symlink can smuggle unrelated paths into
+`sudo rm`. Package installs are uninstalled with the package manager.
 
 ## Version compatibility
 
@@ -202,9 +206,11 @@ Everything runs in **userspace**:
 - no daemons, no kernel modules, no network access, no telemetry;
 - D-Bus on the **session bus only** (`org.wayvibrance` service + the tray's
   own component name); no system bus usage;
-- the tray trusts effect signals only from the connection that currently
-  **owns** `org.wayvibrance` (service-owner check), so other session peers
-  cannot spoof the state it displays;
+- the tray trusts `org.wayvibrance` only when the connection owning the
+  name is the **compositor process itself** (PID cross-checked against
+  `org.kde.KWin`, with the state both signals and method replies pass the
+  same finite/range/list validation), so a peer that grabs the name first
+  cannot spoof the UI or feed it hostile values;
 - writes only to `~/.config/kwinrc` (effect state, managed by KWin itself),
   `~/.config/wayvibrancerc` (hotkey/behaviour) and the optional autostart
   `.desktop`;

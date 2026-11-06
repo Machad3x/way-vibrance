@@ -72,7 +72,10 @@ no segundo monitor mantêm o visual.
 - **Limites** (contenção de DoS local): no máximo 64 perfis, padrão com até
   128 caracteres, nome de exibição com até 64; efeito, diálogo do tray e
   carregamento de configuração aplicam os mesmos tetos, rejeitando valores
-  não finitos em vez de deixá-los chegar ao compositor.
+  não finitos em vez de deixá-los chegar ao compositor. Os padrões são
+  comparados por um matcher de glob linear dedicado (sem engine de regex,
+  logo sem custo de backtracking a considerar), com comportamento verificado
+  como idêntico à tradução para regex anterior.
 
 ## Hotkey & configurações de comportamento
 
@@ -128,10 +131,11 @@ Serialização de perfis: `kind:padrão|vibrância[|r,g,b[|nome]]`
 
 `scripts/uninstall.sh [--prefix PATH] [--purge-config] [--dry-run]` remove
 um build instalado manualmente, fazendo o hot-unload do efeito antes; cada
-candidato a remoção (incluindo o manifesto do build) é validado contra o
-prefixo e uma allowlist de arquivos antes de qualquer exclusão — um
-manifesto adulterado não consegue contrabandear caminhos alheios para o
-`sudo rm`. Instalações via pacote se desfazem pelo gerenciador de pacotes.
+candidato a remoção (incluindo o manifesto do build) é canonicalizado —
+resolvendo symlinks — e validado contra o prefixo real e uma allowlist de
+arquivos antes de qualquer exclusão: nem um manifesto adulterado nem um
+`bin ->` plantado conseguem contrabandear caminhos alheios para o `sudo rm`.
+Instalações via pacote se desfazem pelo gerenciador de pacotes.
 
 ## Compatibilidade de versão
 
@@ -203,9 +207,11 @@ Tudo roda em **espaço de usuário**:
 - sem daemons, sem módulos de kernel, sem rede, sem telemetria;
 - D-Bus apenas no **bus de sessão** (serviço `org.wayvibrance` + o nome de
   componente do tray); nada de bus de sistema;
-- o tray só confia em sinais do efeito vindos da conexão que **possui**
-  `org.wayvibrance` naquele momento (checagem de dono do serviço), então
-  outros processos da sessão não conseguem falsificar o estado exibido;
+- o tray só confia em `org.wayvibrance` quando a conexão dona do nome **é o
+  próprio processo do compositor** (PID cruzado com `org.kde.KWin`); estados
+  vindos de sinais e de method replies passam pela mesma validação de
+  finitude/intervalo/tamanho — um processo que roube o nome primeiro não
+  consegue falsificar a UI nem alimentar valores hostis;
 - escreve só em `~/.config/kwinrc` (estado do efeito, gerido pelo próprio
   KWin), `~/.config/wayvibrancerc` (hotkey/comportamento) e o `.desktop` de
   autostart opcional;

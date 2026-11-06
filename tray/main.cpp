@@ -74,6 +74,72 @@ static bool saneFactor(const QVariant &v, double &out)
     return true;
 }
 
+/** Same ceilings applied to a profile list from any source (signal or
+ *  method reply): count, per-entry pattern length, per-entry total size. */
+static QStringList sanitizeRuleList(const QStringList &in)
+{
+    QStringList rules = in;
+    if (rules.size() > kMaxProfiles) {
+        rules = rules.mid(0, kMaxProfiles);
+    }
+    rules.removeIf([](const QString &e) {
+        const int sep = e.indexOf(QLatin1Char('|'));
+        const int patternLen = sep < 0 ? e.size() : sep; // +6 covers app:/title:
+        return e.isEmpty() || patternLen > kMaxPatternLength + 6 || e.size() > 512;
+    });
+    return rules;
+}
+
+/** Same finite+range clamp applied to numeric METHOD replies, not just
+ *  signal arguments — a fake service must not be able to hand the UI a
+ *  NaN via refreshState() either. Returns false to drop the reply. */
+static bool saneReply(const QDBusReply<double> &reply, double &out)
+{
+    return reply.isValid() && saneFactor(QVariant(reply.value()), out);
+}
+
+/**
+ * True when the connection owning org.wayvibrance is the compositor
+ * process itself. Checking the well-known name alone is not enough: a
+ * session peer can grab it before the effect registers. The authoritative
+ * identity is the PID — same as the owner of org.kde.KWin (or the legacy
+ * org.kde.kwin.Effects), with /proc/<pid>/comm as a fallback for exotic
+ * setups where the compositor exports neither name.
+ */
+static bool ownerIsCompositor(const QString &owner)
+{
+    if (owner.isEmpty()) {
+        return false;
+    }
+    auto *iface = QDBusConnection::sessionBus().interface();
+    if (!iface) {
+        return false;
+    }
+    const auto pidOf = [](const QString &busName) -> uint {
+        const QDBusMessage reply = QDBusConnection::sessionBus().call(
+            QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.DBus"),
+                                           QStringLiteral("/org/freedesktop/DBus"),
+                                           QStringLiteral("org.freedesktop.DBus"),
+                                           QStringLiteral("GetConnectionUnixProcessID"))
+            << busName);
+        return reply.arguments().isEmpty() ? 0u : reply.arguments().first().toUInt();
+    };
+    const uint pid = pidOf(owner);
+    if (pid == 0) {
+        return false;
+    }
+    static const char *kCompositorServices[] = {"org.kde.KWin", "org.kde.kwin.Effects"};
+    for (const char *name : kCompositorServices) {
+        const QString kwinOwner = iface->serviceOwner(QLatin1String(name)).value();
+        if (!kwinOwner.isEmpty() && pidOf(kwinOwner) == pid) {
+            return true;
+        }
+    }
+    QFile comm(QStringLiteral("/proc/%1/comm").arg(pid));
+    return comm.open(QIODevice::ReadOnly)
+        && QString::fromLocal8Bit(comm.readAll().trimmed()).startsWith(QLatin1String("kwin"));
+}
+
 /**
  * Bridges the UI to the effect over D-Bus, coalescing slider movements so
  * the compositor is not hammered with repaints on every event.
@@ -221,8 +287,9 @@ public:
             return;
         }
         const QDBusReply<double> value = m_interface->call(QStringLiteral("vibrance"));
-        if (value.isValid()) {
-            onVibranceChanged(value.value());
+        double vibrance = 1.0;
+        if (saneReply(value, vibrance)) {
+            onVibranceChanged(vibrance);
         }
         const QDBusReply<bool> enabled = m_interface->call(QStringLiteral("enabled"));
         if (enabled.isValid()) {
@@ -239,19 +306,21 @@ public:
             m_primaryOutputSupported = primaryOut.isValid();
         }
         Q_EMIT primaryOutputStateFromEffect(m_primaryOutputSupported,
-                                            primaryOut.isValid() ? primaryOut.value() : QString());
+                                            primaryOut.isValid() ? primaryOut.value().left(kMaxPatternLength)
+                                                                  : QString());
         const QDBusReply<double> red = m_interface->call(QStringLiteral("redGain"));
         const QDBusReply<double> green = m_interface->call(QStringLiteral("greenGain"));
         const QDBusReply<double> blue = m_interface->call(QStringLiteral("blueGain"));
-        if (red.isValid() && green.isValid() && blue.isValid()) {
-            onRGBGainsChanged(red.value(), green.value(), blue.value());
+        double r = 1.0, g = 1.0, b = 1.0;
+        if (saneReply(red, r) && saneReply(green, g) && saneReply(blue, b)) {
+            onRGBGainsChanged(r, g, b);
         }
         // Per-app profiles: an effect older than this feature answers
         // UnknownMethod — hide the UI instead of pretending the rules apply.
         const QDBusReply<QStringList> rules = m_interface->call(QStringLiteral("appRules"));
         setProfilesSupported(rules.isValid());
         if (rules.isValid()) {
-            onAppRulesChanged(rules.value());
+            onAppRulesChanged(sanitizeRuleList(rules.value()));
             // Fine-grained capability: profiles with per-channel gains and
             // display names need the newer setAppRuleFull/setAppRuleName.
             QDBusMessage intro = QDBusMessage::createMethodCall(
@@ -326,6 +395,9 @@ public:
             return QString();
         }
         const QDBusReply<QString> reply = m_interface->call(QStringLiteral("lastFocusedAppId"));
+        // cosmetic pre-fill only, but a fake service must not be able to
+        // shove a megabyte into the dialog's line edit (which caps at
+        // setMaxLength anyway).
         return reply.isValid() ? reply.value() : QString();
     }
 
@@ -450,16 +522,7 @@ private Q_SLOTS:
                 onPrimaryOnlyChanged(args.at(0).toBool());
             }
         } else if (member == QLatin1String("appRulesChanged") && args.size() == 1) {
-            QStringList rules = args.at(0).toStringList();
-            if (rules.size() > kMaxProfiles) {
-                rules = rules.mid(0, kMaxProfiles);
-            }
-            rules.removeIf([](const QString &e) {
-                const int sep = e.indexOf(QLatin1Char('|'));
-                const int patternLen = sep < 0 ? e.size() : sep; // +6 covers app:/title:
-                return e.isEmpty() || patternLen > kMaxPatternLength + 6 || e.size() > 512;
-            });
-            onAppRulesChanged(rules);
+            onAppRulesChanged(sanitizeRuleList(args.at(0).toStringList()));
         }
     }
 
@@ -542,6 +605,13 @@ private:
         }
         if (auto *iface = QDBusConnection::sessionBus().interface()) {
             m_serviceOwner = iface->serviceOwner(QLatin1String(s_vibranceService)).value();
+        }
+        // Trust is anchored to the process, not the name: whoever grabbed
+        // org.wayvibrance must BE the compositor running our effect.
+        if (!ownerIsCompositor(m_serviceOwner)) {
+            qWarning().noquote() << "Way Vibrance: org.wayvibrance is owned by a"
+                                 << "non-compositor process; ignoring it";
+            return;
         }
         m_interface = new QDBusInterface(QString::fromLatin1(s_vibranceService),
                                          QString::fromLatin1(s_vibrancePath),

@@ -78,43 +78,45 @@ if [ -f build/install_manifest.txt ]; then
 import os, re, sys
 
 prefix = os.path.realpath(sys.argv[1])
-seen, rejected = set(), 0
-roots = [l.split("\x00", 1)[0].strip() for l in open(sys.argv[2]) if l.strip()]
-# Canonical set: always attempted, covers manifest-less and drifted trees.
-roots.append("$CANONICAL$")
 
-for path in roots:
-    if path == "$CANONICAL$":
-        for libdir in ("lib", "lib32", "lib64"):
-            for root in (prefix + "/" + libdir,):
-                for sub in ("plugins/kwin/effects/plugins",
-                            "qt6/plugins/kwin/effects/plugins",
-                            "qt/plugins/kwin/effects/plugins"):
-                    cand = root + "/" + sub + "/wayvibrance.so"
-                    if cand not in seen:
-                        seen.add(cand)
-                        print(cand)
-        for cand in (prefix + "/bin/wayvibrance", prefix + "/bin/wayvibrance-tray",
-                     prefix + "/share/applications/org.kde.wayvibrance-tray.desktop"):
-            if cand not in seen:
-                seen.add(cand)
-                print(cand)
+# Candidates: every manifest line re-rooted onto --prefix, plus the
+# canonical file set (covers manifest-less and drifted trees). All of them
+# go through ONE validation: canonical path first (symlinks resolved, so a
+# PREFIX/bin -> /elsewhere symlink cannot smuggle a deletion out of the
+# prefix), containment under the real prefix, then the project's filename
+# allowlist.
+roots = []
+for line in open(sys.argv[2]):
+    l = line.split("\x00", 1)[0].strip()
+    if not l:
         continue
-    m = re.match(r"^(.*?)/(bin|lib[^/]*|share|include)/", path)
-    cand = prefix + "/" + path[m.start(2):] if m else path
-    cand = os.path.realpath(cand)
+    m = re.match(r"^(.*?)/(bin|lib[^/]*|share|include)/", l)
+    roots.append(prefix + "/" + l[m.start(2):] if m else l)
+for libdir in ("lib", "lib32", "lib64"):
+    for sub in ("plugins/kwin/effects/plugins",
+                "qt6/plugins/kwin/effects/plugins",
+                "qt/plugins/kwin/effects/plugins"):
+        roots.append("%s/%s/%s/wayvibrance.so" % (prefix, libdir, sub))
+roots.append(prefix + "/bin/wayvibrance")
+roots.append(prefix + "/bin/wayvibrance-tray")
+roots.append(prefix + "/share/applications/org.kde.wayvibrance-tray.desktop")
+
+seen, rejected = set(), 0
+for raw in roots:
+    cand = os.path.realpath(raw)
     rel = os.path.relpath(cand, prefix)
     base = os.path.basename(cand)
+    outside = rel == os.curdir or rel == os.pardir or rel.startswith(os.pardir + os.sep)
     owner = (rel in ("bin/wayvibrance", "bin/wayvibrance-tray",
                      "share/applications/org.kde.wayvibrance-tray.desktop")
              or (base == "wayvibrance.so" and "/plugins/kwin/effects/plugins/" in cand))
+    if outside:
+        rejected += 1
+        print("REJECT %s (resolves outside prefix)" % cand, file=sys.stderr)
+        continue
     if not owner:
         rejected += 1
-        print("REJECT %s" % cand, file=sys.stderr)
-        continue
-    if rel in (os.curdir, os.pardir) or rel.startswith(os.pardir + os.sep):
-        rejected += 1
-        print("REJECT %s (outside prefix)" % cand, file=sys.stderr)
+        print("REJECT %s (not a Way Vibrance file)" % cand, file=sys.stderr)
         continue
     if cand not in seen:
         seen.add(cand)
