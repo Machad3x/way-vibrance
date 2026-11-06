@@ -23,3 +23,12 @@ add_executable(theme_style_test theme_style_test.cpp)
 target_link_libraries(theme_style_test PRIVATE Qt6::Gui)
 target_include_directories(theme_style_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
 add_test(NAME theme_style_test COMMAND theme_style_test)
+
+# Versioned guarantee for the segmented preset control: exclusive semantics,
+# "no selection" for custom slider values and the QSS edge properties.
+add_executable(preset_segment_test preset_segment_test.cpp)
+target_link_libraries(preset_segment_test PRIVATE Qt6::Widgets)
+target_include_directories(preset_segment_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
+add_test(NAME preset_segment_test COMMAND preset_segment_test)
+set_tests_properties(preset_segment_test PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

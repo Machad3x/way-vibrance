@@ -27,9 +27,10 @@ jobs:
   unit-tests:
     # Cheap, versioned guarantees: the profile glob matcher (fuzz
     # equivalence vs the frozen regex reference + budget ceilings), the
-    # circular slider reset button (real widget, click semantics) and the
+    # circular slider reset button (real widget, click semantics), the
     # palette-derived stylesheet (theme awareness, contrast, no external
-    # resources). Must pass before the packaging matrix is worth its artifacts.
+    # resources) and the segmented preset control (exclusive/no-selection
+    # semantics). Must pass before the packaging matrix is worth its artifacts.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -56,12 +57,19 @@ jobs:
           QT_QPA_PLATFORM=offscreen ./reset_button_test
       - name: Build and run theme-style test
         # The application sheet is generated from the live QPalette; this
-        # guards light/dark awareness, WCAG AA contrast on cards and the
-        # "colours only, no url()/image()" rule. Qt6Gui only.
+        # guards light/dark awareness, WCAG AA contrast on cards, the channel
+        # colours and the "colours only, no url()/image()" rule. Qt6Gui only.
         run: |
           g++ -O1 -std=c++17 -fPIC tests/theme_style_test.cpp -Itray \
             $(pkg-config --cflags --libs Qt6Gui) -o theme_style_test
           ./theme_style_test
+      - name: Build and run preset-segment test
+        # Real QButtonGroup + QSlider: exactly one checked segment for a
+        # preset, none for a custom value, exclusivity restored afterwards.
+        run: |
+          g++ -O1 -std=c++17 -fPIC tests/preset_segment_test.cpp -Itray \
+            $(pkg-config --cflags --libs Qt6Widgets) -o preset_segment_test
+          QT_QPA_PLATFORM=offscreen ./preset_segment_test
 
   packages:
     needs: unit-tests      # red unit tests must gate the artifacts (jobs

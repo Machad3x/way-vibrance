@@ -9,6 +9,7 @@
 // flicker-free live adjustments.
 
 #include "resetbutton_p.h"
+#include "segmented_p.h"
 #include "style_p.h"
 
 #include <QApplication>
@@ -39,6 +40,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QAbstractButton>
+#include <QButtonGroup>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -46,6 +48,7 @@
 #include <QStyle>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <cmath>
@@ -994,28 +997,45 @@ public:
         auto *vibranceBox = new QGroupBox(tr("Vibrance of matching windows"), this);
         auto *vibranceLayout = new QVBoxLayout(vibranceBox);
         vibranceLayout->setSpacing(6);
-        makeSliderRow(vibranceLayout, QString(), QString(), kMinPercent, m_vibSlider, m_vibValue);
+        makeSliderRow(vibranceLayout, QString(), kMinPercent, m_vibSlider, m_vibValue);
 
-        // Quick values, same set as the global presets row.
+        // Quick values, same set as the global presets row: one exclusive
+        // segmented control. A click still goes through QSlider so the
+        // existing dirty/label/apply path is untouched.
+        m_presetGroup = new QButtonGroup(this);
+        m_presetGroup->setExclusive(true);
         auto *presetRow = new QHBoxLayout();
-        for (int percent : {50, 100, 125, 150, 200}) {
-            auto *presetButton = new QPushButton(QStringLiteral("%1%").arg(percent), vibranceBox);
+        presetRow->setSpacing(0);
+        const int presetValues[] = {50, 100, 125, 150, 200};
+        for (int i = 0; i < 5; ++i) {
+            const int percent = presetValues[i];
+            auto *presetButton = wvseg::createPresetButton(
+                vibranceBox, QStringLiteral("%1%").arg(percent), i == 0, i == 4);
+            presetButton->setProperty("wvPresetValue", percent);
+            m_presetGroup->addButton(presetButton);
             connect(presetButton, &QPushButton::clicked, this, [this, percent] {
                 m_vibSlider->setValue(percent); // the valueChanged path marks dirty and refreshes the label
+                // An unchanged value emits no valueChanged, so a click on the
+                // already-active preset must still re-assert the group state.
+                wvseg::syncPresetGroup(m_presetGroup, m_vibSlider->value());
             });
             presetRow->addWidget(presetButton);
         }
         presetRow->addStretch();
         vibranceLayout->addLayout(presetRow);
+        connect(m_vibSlider, &QSlider::valueChanged, this, [this](int percent) {
+            wvseg::syncPresetGroup(m_presetGroup, percent);
+        });
+        wvseg::syncPresetGroup(m_presetGroup, m_vibSlider->value());
         layout->addWidget(vibranceBox);
 
         if (fullApi) {
             m_gainsBox = new QGroupBox(tr("Channel gains (these windows only)"), this);
             auto *gainsLayout = new QVBoxLayout(m_gainsBox);
             gainsLayout->setSpacing(6);
-            makeSliderRow(gainsLayout, QStringLiteral("R"), QStringLiteral("#e05555"), kRgbMinPercent, m_redSlider, m_redValue);
-            makeSliderRow(gainsLayout, QStringLiteral("G"), QStringLiteral("#55c25a"), kRgbMinPercent, m_greenSlider, m_greenValue);
-            makeSliderRow(gainsLayout, QStringLiteral("B"), QStringLiteral("#5b8def"), kRgbMinPercent, m_blueSlider, m_blueValue);
+            makeSliderRow(gainsLayout, QStringLiteral("R"), kRgbMinPercent, m_redSlider, m_redValue);
+            makeSliderRow(gainsLayout, QStringLiteral("G"), kRgbMinPercent, m_greenSlider, m_greenValue);
+            makeSliderRow(gainsLayout, QStringLiteral("B"), kRgbMinPercent, m_blueSlider, m_blueValue);
             auto *resetRgb = new QPushButton(tr("Reset RGB"), m_gainsBox);
             connect(resetRgb, &QPushButton::clicked, this, [this] {
                 m_redSlider->setValue(100);
@@ -1064,6 +1084,9 @@ public:
             m_blueSlider->setValue(qBound(kRgbMinPercent, bluePercent, kRgbMaxPercent));
         }
         m_suppressDirty = false;
+        // setValue() only emits valueChanged when the value actually
+        // changes, so the group needs an explicit sync for a no-op edit.
+        wvseg::syncPresetGroup(m_presetGroup, m_vibSlider->value());
         validate();
         updateButtons();
     }
@@ -1132,19 +1155,25 @@ private:
         m_applyButton->setEnabled(m_dirty);
     }
 
-    void makeSliderRow(QVBoxLayout *layout, const QString &name, const QString &color,
+    void makeSliderRow(QVBoxLayout *layout, const QString &channel,
                        int minimum, QSlider *&slider, QLabel *&value)
     {
         auto *row = new QHBoxLayout();
-        if (!name.isEmpty()) {
-            auto *label = new QLabel(name, this);
-            label->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;").arg(color));
+        if (!channel.isEmpty()) {
+            auto *label = new QLabel(channel, this);
+            // The application sheet owns the semantic colour; keeping it out
+            // of an inline stylesheet is what lets a scheme switch re-polish
+            // the label with the rest of the window.
+            label->setProperty("wvChannel", channel);
             label->setFixedWidth(12);
             row->addWidget(label);
         }
         slider = new QSlider(Qt::Horizontal, this);
         slider->setRange(minimum, kMaxPercent);
         slider->setValue(100);
+        if (!channel.isEmpty()) {
+            slider->setProperty("wvChannel", channel);
+        }
         value = createSliderValueLabel(this, kMaxPercent);
         value->setText(QStringLiteral("100%"));
         row->addWidget(slider, 1);
@@ -1170,6 +1199,7 @@ private:
     QLineEdit *m_pattern = nullptr;
     QLineEdit *m_name = nullptr;
     QGroupBox *m_gainsBox = nullptr;
+    QButtonGroup *m_presetGroup = nullptr;
     QSlider *m_vibSlider = nullptr;
     QLabel *m_vibValue = nullptr;
     QSlider *m_redSlider = nullptr;
@@ -1239,11 +1269,19 @@ public:
         m_enabledCheck->setChecked(true);
         vibranceLayout->addWidget(m_enabledCheck);
 
+        m_presetGroup = new QButtonGroup(this);
+        m_presetGroup->setExclusive(true);
         auto *presets = new QHBoxLayout();
-        for (int percent : {50, 100, 125, 150, 200}) {
-            auto *button = new QPushButton(QStringLiteral("%1%").arg(percent), vibranceGroup);
+        presets->setSpacing(0);
+        const int presetValues[] = {50, 100, 125, 150, 200};
+        for (int i = 0; i < 5; ++i) {
+            const int percent = presetValues[i];
+            auto *button = wvseg::createPresetButton(
+                vibranceGroup, QStringLiteral("%1%").arg(percent), i == 0, i == 4);
+            button->setProperty("wvPresetValue", percent);
+            m_presetGroup->addButton(button);
             connect(button, &QPushButton::clicked, this, [this, percent] {
-                setPercent(percent);
+                setPercent(percent); // also re-syncs the segmented state
                 if (m_controller) {
                     m_controller->requestVibrancePercent(percent);
                 }
@@ -1252,6 +1290,7 @@ public:
         }
         presets->addStretch();
         vibranceLayout->addLayout(presets);
+        wvseg::syncPresetGroup(m_presetGroup, m_slider->value());
         outerLayout->addWidget(vibranceGroup);
 
         // Per-channel RGB gains (like the driver's color page). Percent
@@ -1262,22 +1301,24 @@ public:
         struct ChannelSpec
         {
             const char *name;
-            const char *color;
             QSlider *TrayWindow::*member;
             QLabel *TrayWindow::*label;
         };
         const ChannelSpec channels[] = {
-            {"R", "#e05555", &TrayWindow::m_redSlider, &TrayWindow::m_redLabel},
-            {"G", "#55c25a", &TrayWindow::m_greenSlider, &TrayWindow::m_greenLabel},
-            {"B", "#5b8def", &TrayWindow::m_blueSlider, &TrayWindow::m_blueLabel},
+            {"R", &TrayWindow::m_redSlider, &TrayWindow::m_redLabel},
+            {"G", &TrayWindow::m_greenSlider, &TrayWindow::m_greenLabel},
+            {"B", &TrayWindow::m_blueSlider, &TrayWindow::m_blueLabel},
         };
         for (const ChannelSpec &ch : channels) {
             auto *row = new QHBoxLayout();
             auto *name = new QLabel(QString::fromLatin1(ch.name), rgbGroup);
-            name->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;").arg(QLatin1String(ch.color)));
+            // Semantic colour comes from the application sheet, adapted to
+            // the current palette so it stays legible on light cards.
+            name->setProperty("wvChannel", QString::fromLatin1(ch.name));
             auto *slider = new QSlider(Qt::Horizontal, rgbGroup);
             slider->setRange(kRgbMinPercent, kMaxPercent);
             slider->setValue(100);
+            slider->setProperty("wvChannel", QString::fromLatin1(ch.name));
             auto *value = createSliderValueLabel(rgbGroup, kMaxPercent);
             value->setText(QStringLiteral("100%"));
             row->addWidget(name);
@@ -1458,9 +1499,22 @@ public:
         auto *hotkeyRow = new QHBoxLayout();
         m_shortcutEdit = new QKeySequenceEdit(hotkeyGroup);
         m_shortcutEdit->setKeySequence(controller->toggleShortcut());
-        auto *clearButton = new QPushButton(tr("Clear"), hotkeyGroup);
-        hotkeyRow->addWidget(m_shortcutEdit);
-        hotkeyRow->addWidget(clearButton);
+        // Compact icon action: the text button was wider than the shortcut
+        // field needs. Falls back to a glyph when the icon theme has no
+        // "edit-clear", so this never depends on an external asset.
+        auto *clearButton = new QToolButton(hotkeyGroup);
+        clearButton->setProperty("wvClear", true);
+        clearButton->setCursor(Qt::PointingHandCursor);
+        clearButton->setToolTip(tr("Clear the global hotkey"));
+        clearButton->setAccessibleName(tr("Clear global hotkey"));
+        const QIcon clearIcon = QIcon::fromTheme(QStringLiteral("edit-clear"));
+        if (clearIcon.isNull()) {
+            clearButton->setText(QStringLiteral("✕"));
+        } else {
+            clearButton->setIcon(clearIcon);
+        }
+        hotkeyRow->addWidget(m_shortcutEdit, 1);
+        hotkeyRow->addWidget(clearButton, 0, Qt::AlignVCenter);
         hotkeyLayout->addLayout(hotkeyRow);
         m_shortcutInfo = new QLabel(hotkeyGroup);
         hotkeyLayout->addWidget(m_shortcutInfo);
@@ -1497,7 +1551,7 @@ public:
                     // to press Enter or leave the field.
                     controller->registerToggleShortcut(seq);
                 });
-        connect(clearButton, &QPushButton::clicked, this, [controller, this, updateConflictLabel] {
+        connect(clearButton, &QToolButton::clicked, this, [controller, this, updateConflictLabel] {
             m_shortcutEdit->clear();
             controller->registerToggleShortcut(QKeySequence());
             updateConflictLabel(QKeySequence());
@@ -1602,6 +1656,8 @@ public:
 
         connect(m_slider, &QSlider::valueChanged, this, [controller, this](int percent) {
             updateValueLabel(percent);
+            // Dragging to (or past) a preset must select/clear the segment.
+            wvseg::syncPresetGroup(m_presetGroup, percent);
             if (!m_updatingFromEffect) {
                 controller->requestVibrancePercent(percent);
             }
@@ -1673,6 +1729,10 @@ private:
         percent = qBound(kMinPercent, percent, kMaxPercent);
         m_slider->setValue(percent);
         updateValueLabel(percent);
+        // Called both by preset clicks and by effect-state pushes. Syncing
+        // here covers the "clicked the already-active preset" case, where
+        // setValue() emits nothing at all.
+        wvseg::syncPresetGroup(m_presetGroup, percent);
     }
 
     void setGains(int red, int green, int blue)
@@ -1758,6 +1818,7 @@ private:
     QSlider *m_greenSlider = nullptr;
     QSlider *m_blueSlider = nullptr;
     QGroupBox *m_profileGroup = nullptr;
+    QButtonGroup *m_presetGroup = nullptr;
     QWidget *m_sidePane = nullptr;
     QStackedWidget *m_profileStack = nullptr;
     QListWidget *m_profileList = nullptr;

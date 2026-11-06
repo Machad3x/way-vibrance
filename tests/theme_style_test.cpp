@@ -13,7 +13,11 @@
       3. it contains no external resource loading — no url(), image(),
          @import or file:// (a stylesheet must never read user-writable
          paths), and it is brace-balanced;
-      4. blend() clamps out-of-range amounts instead of extrapolating.
+      4. blend() clamps out-of-range amounts instead of extrapolating;
+      5. the R/G/B channel colours keep their semantic hue, are pairwise
+         distinct and reach >= 4.5:1 on the card in both schemes, and the
+         sheet exposes the channel/preset/clear selectors without leaving
+         any %TOKEN% unreplaced.
 
     Runs headless (QtCore/Gui only). Exit code != 0 on failure.
 */
@@ -90,6 +94,11 @@ static void checkSheet(const char *label, const QPalette &palette)
     check(sheet.contains(QStringLiteral("QGroupBox")), "cards styled");
     check(sheet.contains(QStringLiteral("border-radius: 8px")), "card radius");
     check(sheet.contains(QStringLiteral("wvReset")), "reset button hook");
+    check(sheet.contains(QStringLiteral("wvChannel")), "channel selector");
+    check(sheet.contains(QStringLiteral("wvPreset")), "preset selector");
+    check(sheet.contains(QStringLiteral("wvSegFirst")), "first segment hook");
+    check(sheet.contains(QStringLiteral("wvSegLast")), "last segment hook");
+    check(sheet.contains(QStringLiteral("wvClear")), "clear action hook");
     check(sheet.contains(colors.window.name()), "window colour from palette");
     check(sheet.contains(colors.card.name()), "card colour from palette");
     check(sheet.contains(colors.highlight.name()), "highlight colour from palette");
@@ -97,6 +106,50 @@ static void checkSheet(const char *label, const QPalette &palette)
     // 2. contrast (AA) of normal and secondary text on the card surface.
     check(contrastRatio(colors.text, colors.card) >= 4.5, "text contrast >= 4.5 on card");
     check(contrastRatio(colors.muted, colors.card) >= 4.5, "muted contrast >= 4.5 on card");
+
+    // 5. channel colours stay semantic, distinct and legible on the card.
+    for (int i = 0; i < 3; ++i) {
+        const QColor &channel = colors.channel[i];
+        check(contrastRatio(channel, colors.card) >= 4.5, "channel contrast >= 4.5 on card");
+        check(sheet.contains(channel.name()), "channel colour from palette adaptation");
+        check(sheet.contains(colors.channelTint[i].name()), "channel tint in the sheet");
+        check(colors.channelTint[i] != colors.card, "tint differs from the card");
+        check(colors.channelTint[i] != channel, "tint differs from the handle");
+    }
+    // Red keeps red dominant, green green, blue blue (blending toward the
+    // foreground preserves the order for these base colours).
+    check(colors.channel[0].redF() > colors.channel[0].greenF()
+              && colors.channel[0].redF() > colors.channel[0].blueF(),
+          "red channel stays red");
+    check(colors.channel[1].greenF() > colors.channel[1].redF()
+              && colors.channel[1].greenF() > colors.channel[1].blueF(),
+          "green channel stays green");
+    check(colors.channel[2].blueF() > colors.channel[2].redF()
+              && colors.channel[2].blueF() > colors.channel[2].greenF(),
+          "blue channel stays blue");
+
+    // Pairwise distinctness: a delta of a few units would make the rows
+    // indistinguishable on screen.
+    for (int i = 0; i < 3; ++i) {
+        for (int j = i + 1; j < 3; ++j) {
+            const int delta = qAbs(colors.channel[i].red() - colors.channel[j].red())
+                + qAbs(colors.channel[i].green() - colors.channel[j].green())
+                + qAbs(colors.channel[i].blue() - colors.channel[j].blue());
+            check(delta >= 30, "channels are visually distinct");
+        }
+    }
+
+    // Every placeholder of the generator was substituted.
+    static const char *const tokens[] = {
+        "%WINDOW%", "%CARD%", "%BORDER%", "%MUTED%", "%BASE%",
+        "%HIGHLIGHT%", "%HIGHLIGHTED_TEXT%", "%MID%",
+        "%MIDLIGHT%", "%BUTTON_TEXT%", "%GROOVE%",
+        "%CH_R%", "%CH_G%", "%CH_B%",
+        "%TINT_R%", "%TINT_G%", "%TINT_B%",
+    };
+    for (const char *token : tokens) {
+        check(!sheet.contains(QLatin1String(token)), "no unreplaced QSS token");
+    }
 
     // 3. no external resources, balanced braces.
     check(!sheet.contains(QStringLiteral("url(")), "no url()");

@@ -75,7 +75,11 @@ no segundo monitor mantêm o visual.
   o diálogo esconde o que o build do efeito em execução não suporta. A janela
   usa cartões derivados do tema (cores vêm do `QPalette` ativo, então temas
   claro/escuro e trocas ao vivo são acompanhados) e o painel de perfis mostra
-  um estado vazio curto até existir a primeira regra.
+  um estado vazio curto até existir a primeira regra. As linhas R/G/B usam
+  cores semânticas de canal (aproximadas do foreground até atingirem WCAG AA
+  no cartão, então continuam legíveis em temas claros); os presets formam um
+  controle segmentado com exatamente um segmento ativo enquanto o valor é um
+  preset; o *Clear* do campo de hotkey é uma ação compacta com ícone.
 - **Persistência**: `[Effect-wayvibrance][WayVibranceAppRules]` no `kwinrc`.
 - **Limites** (contenção de DoS local): no máximo 64 perfis, padrão com até
   128 caracteres, nome de exibição com até 64; efeito, diálogo do tray e

@@ -74,7 +74,11 @@ monitor's game keeps its look.
   cannot do. The window is drawn as theme-derived cards (colours come from
   the active `QPalette`, so light/dark schemes and live scheme switches are
   followed) and the profiles pane shows a short empty state until the first
-  rule exists.
+  rule exists. The R/G/B rows use semantic channel colours (adapting toward
+  the foreground until they reach WCAG AA on the card, so they stay legible
+  on light themes); presets are one segmented control with exactly one
+  active segment while the value is a preset; the hotkey field's *Clear* is
+  a compact icon action.
 - **Persistence**: `[Effect-wayvibrance][WayVibranceAppRules]` in `kwinrc`.
 - **Limits** (local-DoS containment): at most 64 profiles, pattern up to
   128 characters, display name up to 64; the effect, the tray dialog and the
