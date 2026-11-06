@@ -1,200 +1,206 @@
-# Pesquisa de viabilidade — KWin 6.8 / Wayland (2026-11-05)
+[English](RESEARCH.md) | [Português](RESEARCH.pt.md)
 
-Notas técnicos que fundamentaram a arquitetura do Way Vibrance. Ambiente de
-referência: **CachyOS, Plasma 6.31, KWin 6.8.2, Qt 6.12, sessão Wayland**
+# Feasibility research — KWin 6.8 / Wayland (2026-11-05)
+
+The technical notes that grounded the Way Vibrance architecture. Reference
+environment: **CachyOS, Plasma 6.3.1, KWin 6.8.2, Qt 6.12, Wayland session**
 (`qdbus6 org.kde.KWin /KWin supportInformation`).
 
-> Projeto criado vibe-coded com auxílio de IA (OpenCode), sob revisão do
-> mantenedor — histórico completo no git.
+> The project was vibe-coded with AI assistance (OpenCode) under the
+> maintainer's review — full history in the git log.
 
-## 1. Por que "vibrance-gui puro" é impossível no Wayland
+## 1. Why "pure vibrance-gui" is impossible on Wayland
 
-- No Windows o vibrance-gui escreve no **CTM (Color Transformation Matrix)**
-  via API do driver (NVML/ADL) ou registra um filtro no pipeline.
-- No Wayland o **compositor é o DRM master**; nenhum app de usuário pode
-  programar CTM/gamma do KMS (por isso `xrandr --set CTM`, `vibrant-cli`,
-  etc. não funcionam). O máximo fora do compositor é *color-management*
-  ICC/HDR do próprio KWin — não serve para um boost global instantâneo.
-- Conclusão: o lugar correto é **dentro do compositor**, como efeito de pós
-  processamento da composição. KWin é o compositor do KDE → **KWin Effect
-  API**.
+- On Windows, vibrance-gui writes the **CTM (Color Transformation Matrix)**
+  through the driver API (NVML/ADL) or registers a pipeline filter.
+- On Wayland the **compositor is the DRM master**; no user application can
+  program the KMS CTM/gamma (which is why `xrandr --set-output-ctm`,
+  `vibrant-cli`, etc. do not work). The most that exists outside the
+  compositor is KWin's own ICC/HDR *color-management* — not fit for an
+  instant global boost.
+- Conclusion: the correct place is **inside the compositor**, as a
+  post-processing step of the composition. KWin is KDE's compositor →
+  **KWin Effect API**.
 
-## 2. Anatomia de efeitos no KWin 6.8 (verificado no fonte, `KDE/kwin@master`)
+## 2. Anatomy of effects in KWin 6.8 (verified against the source, `KDE/kwin@master`)
 
-### Carregamento (src/effect/effectloader.cpp / effecthandler.cpp)
+### Loading (src/effect/effectloader.cpp / effecthandler.cpp)
 
-- 3 famílias:
-  1. **Built-ins compilados**: `kwin_add_builtin_effect(...)` → linkados ao
-     binário; metadata em `/usr/share/kwin/builtin-effects/*.json` com
+- Three families:
+  1. **Compiled-in built-ins**: `kwin_add_builtin_effect(...)` → linked into
+     the binary; metadata under `/usr/share/kwin/builtin-effects/*.json` with
      `"org.kde.kwin.effect": { "internal": true }`.
-  2. **Scripted** (JS/QML, tipo `KWin/Effect` KPackage):
+  2. **Scripted** (JS/QML, `KWin/Effect` KPackage type):
      `/usr/share/kwin/effects/<id>/{metadata.json,contents/code/main.js|ui/main.qml}`
-     e, para usuários, `~/.local/share/kwin/effects/<id>/`
-     (KPackage::PackageLoader, serviço `kwin/effects`).
-  3. **Plugins Qt de terceiros** (nosso caso): `PluginEffectLoader` chama
-     `KPluginMetaData::findPlugins("kwin/effects/plugins")` → qualquer `.so`
-     com metadata embutida instalado em
-     `<XDG libdir>/kwin/effects/plugins/` (no Arch:
-     `/usr/lib/qt6/plugins/kwin/effects/plugins/` — o diretório já existe).
-- **KWIN_EFFECT_API_VERSION = 0.237** — sem garantia binária; rebuild a cada
-  update do KWin (padrão em todos os projetos da categoria).
+     plus, for users, `~/.local/share/kwin/effects/<id>/`
+     (KPackage::PackageLoader, `kwin/effects` service).
+  3. **Third-party Qt plugins** (our case): `PluginEffectLoader` calls
+     `KPluginMetaData::findPlugins("kwin/effects/plugins")` → any `.so` with
+     embedded metadata installed under
+     `<XDG libdir>/kwin/effects/plugins/` (on Arch:
+     `/usr/lib/qt6/plugins/kwin/effects/plugins/` — the directory already
+     exists).
+- **KWIN_EFFECT_API_VERSION = 0.237** — no binary-compatibility promise;
+  rebuild after every KWin update (the norm for the whole category).
 
-### Efeito de terceiros: formato de plugin confirmado
+### Third-party effect: confirmed plugin format
 
 - `metadata.json`: `KPlugin.{Id, Name, Description, Icon, Category:
   "Appearance", ServiceTypes:["KWin/Effect"], Version, EnabledByDefault:false}`.
 - `main.cpp`: `KWIN_EFFECT_FACTORY_SUPPORTED(ClassName, "metadata.json",
-  <suported code>)` (macro em `effect/effect.h`; gera um
-  `EffectPluginFactory` com IID `org.kde.kwin.EffectPluginFactory<kwinversão>`)
+  <supported code>)` (macro in `effect/effect.h`; generates an
+  `EffectPluginFactory` with IID `org.kde.kwin.EffectPluginFactory<kwinversion>`)
   + `#include "main.moc"`.
-- CMake: `find_package(KWin REQUIRED)` → alvo **`KWin::kwin`**
-  (`/usr/lib/cmake/KWin/KWinConfig.cmake`); instala em
+- CMake: `find_package(KWin REQUIRED)` → the **`KWin::kwin`** target
+  (`/usr/lib/cmake/KWin/KWinConfig.cmake`); install into
   `${KDE_INSTALL_PLUGINDIR}/kwin/effects/plugins`.
 
-### O motor de cor (a descoberta central)
+### The color engine (the central finding)
 
-- `WindowPaintData::setSaturation/multiplySaturation` (range 1.0 = neutro;
-  valores > 1 **boost**). Em
+- `WindowPaintData::setSaturation/multiplySaturation` (1.0 = neutral;
+  values > 1 **boost**). In
   `src/scene/itemrenderer_opengl.cpp`:
   - `if (data.saturation() != 1.0) traits |= ShaderTrait::AdjustSaturation;`
-  - uniform `GLShader::FloatUniform::Saturation` aplicado **"in linear
-    space"** (comentário no fonte) — correto color-wise, sem textura extra:
-    usa o shader já existente da composição de janelas do renderer.
-- `requestedEffectChainPosition() == 99` → roda por último, sobre a aparência
-  final de todas as janelas.
-- `isActive()` falso (valor 1.0 ou desligado) → fora da cadeia: **custo zero**
-  quando neutro.
-- Limitação herdada: janela a janela → o **cursor** (hardware plane) não é
-  afetado. Mesmo trade-off do efeito de daltonismo (`colorblindnesscorrection`)
-  do próprio KWin.
+  - the `GLShader::FloatUniform::Saturation` uniform is applied **"in linear
+    space"** (source comment) — colorwise correct, no extra texture: it uses
+    the renderer's existing window-composition shader.
+- `requestedEffectChainPosition() == 99` → runs last, over the final look of
+  every window.
+- `isActive()` false (value 1.0 or disabled) → out of the chain: **zero
+  cost** when neutral.
+- Inherited limitation: window by window → the **cursor** (hardware plane)
+  is not affected. Same trade-off as KWin's own color-blindness-correction
+  effect.
 
 ### D-Bus
 
-- `org.kde.kwin.Effects` (objeto `/Effects`): `loadEffect`, `unloadEffect`,
+- `org.kde.kwin.Effects` (object `/Effects`): `loadEffect`, `unloadEffect`,
   `toggleEffect`, `isEffectLoaded`, `isEffectSupported`, `reconfigureEffect`,
-  `activeEffects` — **hot-load/hot-unload em sessão viva, sem logout**
-  (confirmado por introspecção no KWin 6.8.2). Para *rebuild* do .so a sessão
-  ainda precisa reiniciar (o plugin não é descarregável com segurança).
-- Um efeito pode registrar seu **próprio serviço de sessão** (código roda
-  dentro de `kwin_wayland`): usado `org.wayvibrance` + `/Vibrance` para
-  controle ao vivo sem tocar em `kwinrc`/`reconfigure` (zero flicker).
-- Sinal `windowActivated` do workspace: base para perfis por app (roadmap).
+  `activeEffects` — **hot-load/hot-unload in a live session, no logout
+  needed** (confirmed by introspection on KWin 6.8.2). For *rebuilding* the
+  .so the session still has to restart (the plugin cannot be safely
+  unloaded).
+- An effect can register its **own session service** (its code runs inside
+  `kwin_wayland`): we use `org.wayvibrance` + `/Vibrance` for live control
+  without touching `kwinrc`/`reconfigure` (zero flicker).
+- Workspace `windowActivated` signal: basis for per-app profiles (roadmap).
 
-## 2.5 Caminho offscreen p/ shaders próprios (API pública, verificado 6.8)
+## 2.5 Offscreen path for custom shaders (public API, verified on 6.8)
 
-- `OffscreenEffect` (header instalado `effect/offscreeneffect.h`) é o padrão
-  do próprio KWin (daltonismo): `redirect(w)` + `setShader(w, shader)` por
-  janela; **janelas não redirecionadas são encaminhadas a
-  `effects->drawWindow` normalmente** — ou seja, dá para ligar/desligar o
-  custo por estado, e a vibrância por uniform continua ativa no caminho
-  normal. O grab aplica o `WindowPaintData` (inclusive saturação) antes do
-  shader custom.
+- `OffscreenEffect` (installed header `effect/offscreeneffect.h`) is KWin's
+  own pattern (color-blindness): `redirect(w)` + `setShader(w, shader)` per
+  window; **non-redirected windows are forwarded to `effects->drawWindow`
+  normally** — i.e. the cost can be toggled per state, and uniform vibrance
+  stays active on the normal path. The grab applies `WindowPaintData`
+  (saturation included) before the custom shader.
 - `ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture,
-  QString(), ":/...frag")` → `unique_ptr<GLShader>`; uniforms por nome via
-  `ShaderBinder` + `setUniform("nome", QVector3D/float/…)`. Tudo público.
-- Shaders `.frag` de plugin podem `#include "colormanagement.glsl"` (resolve
-  no qrc do próprio kwin, ligado ao processo) e usar
+  QString(), ":/...frag")` → `unique_ptr<GLShader>`; named uniforms via
+  `ShaderBinder` + `setUniform("name", QVector3D/float/…)`. All public.
+- Plugin `.frag` shaders can `#include "colormanagement.glsl"` (resolved in
+  kwin's own qrc, linked into the process) and use
   `sourceEncodingToNitsInDestinationColorspace()` /
-  `nitsToDestinationEncoding()` — ganhos RGB aplicados em espaço linear,
-  consistente com a vibrância nativa.
-- Shader gerado **lazy** (só quando canais ≠ 1.0; nunca em construtor se o
-  contexto GL não garantir), com `setUniform` imediato após criação.
+  `nitsToDestinationEncoding()` — RGB gains applied in linear space,
+  consistent with native vibrance.
+- Shader generated **lazily** (only when channels ≠ 1.0; never in the
+  constructor if the GL context isn't guaranteed), `setUniform` right after
+  creation.
 
-## 2.6 Tolerância de versão da parte C++ (sem pin numérico)
+## 2.6 Version tolerance of the C++ side (no numeric pins)
 
-- `Effect/OffscreenEffect::drawWindow`: `void`→`bool` no 6.8 e
-  `QRegion`→`Region` no 6.6 — resolvido **com uma única definição**:
-  `auto drawWindow(…) -> decltype(effects->drawWindow(…)) override`
-  (handler público evolui em lockstep com a base; `return <expr void>` é
-  válido em função `cv void`). Tipo do parâmetro de região via
-  `WvPaintRegion` chaveado por `KWIN_EFFECT_API_VERSION_MINOR >= 237`.
-- `&OffscreenEffect::drawWindow` (ponteiro-para-membro) **não** pode ser
-  usado para extrair o retorno dentro do corpo da classe derivada — GCC
-  trata como acesso protected ao tipo incompleto; a variante via objeto
-  público (`effects->`) compila.
+- `Effect/OffscreenEffect::drawWindow`: `void`→`bool` in 6.8 and
+  `QRegion`→`Region` in 6.6 — solved with **a single definition**:
+  `auto drawWindow(…) -> decltype(effects->drawWindow(…)) override` (the
+  public handler evolves in lockstep with the base; `return <void-expr>` is
+  valid in a `cv void` function). Region parameter type via `WvPaintRegion`
+  keyed on `KWIN_EFFECT_API_VERSION_MINOR >= 237`.
+- `&OffscreenEffect::drawWindow` (member pointer) **cannot** be used to
+  extract the return type inside the derived class body — GCC treats it as
+  a protected access to an incomplete type; the public-object variant
+  (`effects->`) compiles.
 
-### Escopo "monitor primário" (0.3)
+### "Primary monitor" scoping (0.3)
 
-> **ATUALIZAÇÃO (0.5):** o proxy `activeScreen()` abaixo foi substituído —
-> o modo agora mira uma saída **escolhida pelo usuário** (`PrimaryOutput`
-> em kwinrc, dropdown no tray / `wayvibrance primary output <nome>`),
-> comparada por nome de conector em `effects->screens()` com cache
-> invalidado em hotplug; "automático" = primeira saída. Mantido como
-> registro histórico da pesquisa original.
+> **UPDATE (0.5):** the `activeScreen()` proxy below was replaced — the mode
+> now targets a **user-picked output** (`PrimaryOutput` in kwinrc, tray
+> dropdown / `wayvibrance primary output <name>`), matched by connector name
+> over `effects->screens()` with a hotplug-invalidated cache; "automatic" =
+> first output. Kept here as the historical record of the original research.
 
-- A API pública de efeitos **não expõe um conceito de "saída primária"**
-  (nada de `primaryScreen()` em `options.h`/`effecthandler.h` instalados).
-  Proxy usado: `EffectsHandler::activeScreen()` — a saída sob o cursor —,
-  público e estável, que em setups de jogo com um monitor "principal"
-  corresponde ao que o usuário espera.
-- O escopo é decidido **por janela, a cada `drawWindow`** (`w->screen()`),
-  então janelas que se movem entre telas entram/saem do efeito
-  naturalmente, sem precisar de sinais de reposicionamento (inexistentes
-  na API pública 6.8). Fora de escopo: bypass total (nem uniform, nem
-  offscreen). O set `redirect()` (ganhos RGB) continua global — texturas de
-  janelas fora de escopo ficam ociosas e o base as descarta/redesenha.
+- The public effects API **exposes no "primary output" concept** (nothing
+  like `primaryScreen()` in the installed `options.h`/`effecthandler.h`).
+  The proxy used: `EffectsHandler::activeScreen()` — the output under the
+  cursor — public and stable, which in single-"primary"-monitor gaming
+  setups matched what users expected.
+- Scoping is decided **per window, every `drawWindow`** (`w->screen()`), so
+  windows moving between screens enter/leave the effect naturally without
+  needing repositioning signals (nonexistent in the public 6.8 API). Out of
+  scope: full bypass (neither uniform nor offscreen). The `redirect()` set
+  (RGB gains) stayed global — textures of out-of-scope windows sat idle and
+  the base discarded/redrew them.
 
-## 3. Alternativas mapeadas e descartadas
+## 3. Alternatives mapped and rejected
 
-| Caminho | Veredito |
+| Path | Verdict |
 |---|---|
-| CTM KMS direto (libdrm) | ❌ impossível no Wayland (DRM master exclusivo) |
-| Efeito JS/QML (`ShaderTrait.AdjustSaturation` scripting) | ⚠️ viável mas por-grab (texturas extras), controle ao vivo fraco (reconfigure), sem serviço D-Bus próprio |
-| `OffscreenEffect` com GLSL próprio (via kwin-daltonismo) | ⚠️ mais pesado (grab por janela) — usado agora **apenas e de forma condicional** p/ ganhos RGB (ver §2.5); o modo *vibrance real* (pele protegida) pode movê-lo p/ scene pass no futuro |
-| `multiplySaturation` no renderer embutido | ✅ **escolhido** — linear, sem passe extra, custo zero em neutro |
-| Portar para outros compositores | ❌ fora de escopo — o projeto é **exclusivo KDE/Plasma** |
+| Direct KMS CTM (libdrm) | ❌ impossible on Wayland (exclusive DRM master) |
+| JS/QML effect (scripting `ShaderTrait.AdjustSaturation`) | ⚠️ viable but grab-based (extra textures), weak live control (reconfigure), no own D-Bus service |
+| `OffscreenEffect` with custom GLSL (via kwin-daltonismo) | ⚠️ heavier (per-window grab) — now used **only and conditionally** for RGB gains (see §2.5); a future *true vibrance* mode (skin-safe) may move it to a scene pass |
+| `multiplySaturation` on the built-in renderer | ✅ **chosen** — linear, no extra pass, zero cost at neutral |
+| Porting to other compositors | ❌ out of scope — the project is **KDE/Plasma exclusive** |
 
-## 3.1 Estratégia de compatibilidade de versão (requisito do projeto)
+## 3.1 Version-compatibility strategy (project requirement)
 
-- **Nenhum número de versão do Plasma/KWin é fixado em código.** O único
-  gate é comportamental: `supported()` checa composição OpenGL em runtime, e
-  um `#error` de piso exige apenas `KWIN_EFFECT_API_VERSION_MINOR >= 236`
-  (o que a API expõe desde o KWin 6.0).
-- Tray e CLI usam **somente D-Bus** (`org.wayvibrance`,
-  `org.kde.kwin.Effects`) — estáveis em todo Plasma 6, zero pin.
-- O plugin é compilado contra o KWin instalado (`find_package(KWin REQUIRED)`
-  sem teto de versão). A API pública usada
+- **No Plasma/KWin version number is pinned in code.** The only gate is
+  behavioral: `supported()` checks OpenGL compositing at runtime, and a
+  floor `#error` requires just `KWIN_EFFECT_API_VERSION_MINOR >= 236` (what
+  the API has exposed since KWin 6.0).
+- Tray and CLI use **D-Bus only** (`org.wayvibrance`,
+  `org.kde.kwin.Effects`) — stable across all of Plasma 6, zero pins.
+- The plugin is compiled against the installed KWin (`find_package(KWin
+  REQUIRED)` with no version ceiling). The public API we use
   (`WindowPaintData::multiplySaturation`, `drawWindow`,
-  `KWIN_EFFECT_FACTORY_SUPPORTED`, `requestedEffectChainPosition`) existe
-  desde o KWin 6.0 e não evolui de forma destrutiva dentro do Plasma 6 —
-  rebuild via `scripts/build.sh` é o único passo necessário após updates.
+  `KWIN_EFFECT_FACTORY_SUPPORTED`, `requestedEffectChainPosition`) exists
+  since KWin 6.0 and does not evolve destructively within Plasma 6 — a
+  `scripts/build.sh` rebuild is the only step needed after updates.
 
-### Mapeamento das assinaturas de `drawWindow` (verificado no fonte, por release)
+### `drawWindow` signature mapping (verified against the source, per release)
 
-| KWin | effects API minor | 5º parâmetro | retorno |
+| KWin | effects API minor | 5th parameter | return |
 |---|---|---|---|
 | 6.0 – 6.5 | 236 | `QRegion` | `void` |
 | 6.6 – 6.7 | 237 | `KWin::Region` | `void` |
 | 6.8 | 237 | `KWin::Region` | `bool` |
 | master (6.9-git) | 237 | `KWin::Region` | `bool` |
 
-O efeito absorve as duas mudanças sem pin de versão:
+The effect absorbs both changes without version pins:
 
-- **Tipo de região**: `using WvPaintRegion = Region` quando
-  `KWIN_EFFECT_API_VERSION_MINOR >= 237`, senão `QRegion` (chaveia pela macro
-  que o próprio header define, não por palpite de release).
-- **Tipo de retorno**: assinatura declarada como
-  `auto drawWindow(...) -> decltype(effects->drawWindow(...))`. O tipo
-  derivado é `void` em 6.0–6.7 e `bool` em 6.8+, casando com a base. Como
-  `return <expr-void>` é válido dentro de função `cv void`, **uma única
-  definição** compila em todo o range.
+- **Region type**: `using WvPaintRegion = Region` when
+  `KWIN_EFFECT_API_VERSION_MINOR >= 237`, else `QRegion` (keyed on the macro
+  the header itself defines, not a release guess).
+- **Return type**: declared as
+  `auto drawWindow(...) -> decltype(effects->drawWindow(...))`. The deduced
+  type is `void` on 6.0–6.7 and `bool` on 6.8+, matching the base. Since
+  `return <void-expr>` is valid inside a `cv void` function, **one single
+  definition** compiles across the whole range.
 
-## 4. Referências
+## 4. References
 
-- vibrance-gui (x64christ/Vibrance-GU) e VibranceGUI (vibrancegui.com) —
-  modelo de paridade (driver API + perfis + hotkey + tray).
-- libvibrant / vibrant-cli — algoritmo de vibrância (preserva pele) p/ futuro.
-- EfeDursun125/kwin-saturation — efeito C++ `multiplySaturation` + GUI;
-  confirmou a técnica do uniform embutido.
-- Garward/kwin-saturation-effect — shader GLSL próprio por grab; documenta a
-  imposibilidade do CTM no Wayland; 2.0 ≈ NV "1023".
-- KDE/kwin `src/effect/effectloader.cpp`, `src/scene/itemrenderer_opengl.cpp`,
-  `src/plugins/colorblindnesscorrection/*` — arquitetura acima.
+- vibrance-gui (x64christ/Vibrance-GU) and VibranceGUI (vibrancegui.com) —
+  the parity model (driver API + profiles + hotkey + tray).
+- libvibrant / vibrant-cli — skin-tone-preserving vibrance algorithm for a
+  future mode.
+- EfeDursun125/kwin-saturation — C++ effect using `multiplySaturation` +
+  GUI; confirmed the built-in uniform technique.
+- Garward/kwin-saturation-effect — custom per-grab GLSL shader; documents
+  the CTM impossibility on Wayland; 2.0 ≈ NV "1023".
+- KDE/kwin `src/effect/effectloader.cpp`,
+  `src/scene/itemrenderer_opengl.cpp`, `src/plugins/colorblindnesscorrection/*`
+  — the architecture above.
 - develop.kde.org/docs/plasma/kwin/api — scripting API (ShaderTrait etc.).
 
-## 5. Números de escala
+## 5. Scale numbers
 
-- Fator 1.0 = neutro (Windows: NV 576/1023 ≈ 100%).
-- 2.0 ≈ vibrance máximo equivalente ao driver (NV 1023).
-- UI do tray expõe 0–200% em todos os sliders (clamp interno [0, 2] no
-  efeito — 2.0 é o teto real da cadeia de cor do KWin; 0 = P&B).
+- Factor 1.0 = neutral (Windows: NV 576/1023 ≈ 100%).
+- 2.0 ≈ the maximum driver-equivalent vibrance (NV 1023).
+- The tray UI exposes 0–200% on every slider (internal clamp [0, 2] in the
+  effect — 2.0 is the real ceiling of KWin's color chain; 0 = grayscale).

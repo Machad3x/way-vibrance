@@ -1,3 +1,5 @@
+[English](ROADMAP.md) | [Português](ROADMAP.pt.md)
+
 # Way Vibrance — Roadmap
 
 Extracted from the README; the [README](../README.md) keeps only a summary.
@@ -12,16 +14,21 @@ Back to [README](../README.md) · [Features](FEATURES.md).
 4. **Vulkan compositing** — apply the saturation/gains under KWin's Vulkan
    backend (today the effect intentionally declines to load there instead
    of silently no-op).
-5. **Prebuilt packages** — in progress for the next release, produced by
-   `scripts/package.sh` in per-distro containers (matching each distro's
-   KWin/Qt ABI) and attached to the GitHub release:
-   - RPM → Fedora, and the supported path for **Fedora Atomic/Kinoite**
-     (`rpm-ostree install way-vibrance-….rpm`) — verified: KWin 6.3–6.8 only
-     load effects from system plugin directories, so user-scope installs are
-     not an option for the effect;
-   - DEB → Debian 13+ / Ubuntu 24.10+ / KDE Neon / Mint;
+5. **Prebuilt packages** — shipped with the next release via
+   `scripts/package.sh`, **one artifact per distro release** (the effect is
+   compiled against that release's KWin; the effects API has no
+   cross-version binary guarantee):
+   - RPM → Fedora 44, 45; on **Fedora Atomic/Kinoite** install with
+     `rpm-ostree install` — verified: KWin 6.3–6.8 only loads effects from
+     system plugin directories, so user-scope installs are not an option
+     for the effect;
+   - DEB → Debian 13 + 14 (testing) and Ubuntu 26.04/26.10 — supported
+     releases only; EOL releases are dropped (25.04/25.10 were removed once
+     Canonical ended support);
    - PKGBUILD → Arch (AUR-style auto-rebuild so every KWin update
      recompiles the effect).
+   CI: the podman matrix runs every build; a GitHub Action could publish
+   `dist/` automatically on release tags.
 6. **Sound/OSD on profile switch** (vibrance-gui parity) — layer-shell OSD.
 7. CI: run the podman matrix (arch/fedora/debian/ubuntu) automatically on
    pushes and publish the artifacts on release tags.

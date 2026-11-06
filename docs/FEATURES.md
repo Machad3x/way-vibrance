@@ -1,3 +1,5 @@
+[English](FEATURES.md) | [Português](FEATURES.pt.md)
+
 # Way Vibrance — Features & Reference
 
 The full guide; the [README](../README.md) keeps only what you need to build
@@ -131,8 +133,16 @@ Profile serialization: `kind:pattern|vibrance[|r,g,b[|display-name]]`
   on the base signature, and to the output-class reshuffle (Screen/Output/
   LogicalOutput) via `auto`-deduced iteration + `__has_include` — no
   version pins. After a large Plasma update, rerun `scripts/build.sh`.
-- Verified container builds: Arch, Fedora, Debian 13 (KWin 6.3.4), Ubuntu
-  25.04 (KWin 6.3.4), plus the daily driver at KWin 6.8.2.
+- Verified container builds: Arch, Fedora 44/45, Debian 13/14 (testing) and
+  Ubuntu 26.04/26.10 — each artifact additionally *installed and smoke-verified*
+  in a fresh container of its release — plus the daily driver at KWin 6.8.2.
+- **Prebuilt policy**: one binary per distro release, each compiled in a
+  throwaway container of that release (`scripts/package.sh`) — mixing a
+  plugin built against one KWin minor with another can crash on load, since
+  the effects API has no ABI stability promise. Artifacts embed their
+  target: `.fc44/.fc45`, `~debian13/~debian14`, `~ubuntu26.04…`.
+  Releases that reach upstream EOL are dropped from the matrix (Ubuntu
+  25.04/25.10 were removed once Canonical ended support).
 
 ## Parity with vibrance-gui
 
