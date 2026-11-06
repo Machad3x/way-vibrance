@@ -73,7 +73,10 @@ monitor's game keeps its look.
 - **Limits** (local-DoS containment): at most 64 profiles, pattern up to
   128 characters, display name up to 64; the effect, the tray dialog and the
   config load all enforce the same ceilings, rejecting non-finite values
-  rather than letting them reach the compositor. Patterns are matched by a
+  rather than letting them reach the compositor. Oversized strings are
+  refused before any processing happens (raw prefixed patterns ≤ 140
+  characters, output names ≤ 256), so no trim/compare/persist path ever
+  sees megabyte input. Patterns are matched by a
   dedicated linear-time glob matcher (no regex engine, so no backtracking
   cost to reason about) with behavior verified identical to the previous
   regex translation.

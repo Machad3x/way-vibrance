@@ -56,6 +56,12 @@ static constexpr auto s_rulesGroupName = "WayVibranceAppRules";
 static constexpr int kMaxAppRules = 64;
 static constexpr int kMaxPatternLength = 128;
 static constexpr int kMaxNameLength = 64;
+// Generous cap for output names (real ones are like "eDP-1"/"DP-4"): the
+// point is only to stop unbounded strings from reaching trim/compare/
+// persist paths. Prefixed patterns get kMaxPatternLength plus slack for
+// the app:/title: marker and surrounding whitespace.
+static constexpr int kMaxOutputNameLength = 256;
+static constexpr int kMaxPrefixedPatternLength = kMaxPatternLength + 12;
 // Compiled GLShader variants cached for profile gains. Comfortably above
 // any legitimate working set (kMaxAppRules + the global set), yet bounded
 // so endless gain-editing churn cannot grow the pool (or the GPU memory
@@ -248,6 +254,10 @@ QString VibranceEffect::primaryOutputName() const
 
 void VibranceEffect::setPrimaryOutputName(const QString &name)
 {
+    if (name.size() > kMaxOutputNameLength) {
+        qWarning() << "Way Vibrance: ignoring oversized primary output name" << name.size();
+        return;
+    }
     const QString trimmed = name.trimmed();
     if (trimmed == m_primaryOutputName) {
         return;
@@ -488,6 +498,12 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
                                const std::optional<QVector3D> &gains,
                                const std::optional<QString> &name)
 {
+    // Bound the raw input BEFORE trimmed()/mid() touch it: a session peer
+    // must not be able to charge the compositor for megabyte string ops.
+    if (prefixedPattern.size() > kMaxPrefixedPatternLength) {
+        qWarning() << "Way Vibrance: app profile input too long" << prefixedPattern.size();
+        return;
+    }
     bool titleMatch = false;
     QString pattern = prefixedPattern.trimmed();
     if (pattern.startsWith(QLatin1String("title:"))) {
@@ -585,6 +601,10 @@ void VibranceEffect::setAppRuleFull(const QString &prefixedPattern, qreal vibran
 void VibranceEffect::setAppRuleName(const QString &prefixedPattern, const QString &name)
 {
     // Cosmetic-only edit: finds the existing rule and touches nothing else.
+    if (prefixedPattern.size() > kMaxPrefixedPatternLength) {
+        qWarning() << "Way Vibrance: app profile input too long" << prefixedPattern.size();
+        return;
+    }
     bool titleMatch = false;
     QString pattern = prefixedPattern.trimmed();
     if (pattern.startsWith(QLatin1String("title:"))) {
@@ -593,7 +613,11 @@ void VibranceEffect::setAppRuleName(const QString &prefixedPattern, const QStrin
     } else if (pattern.startsWith(QLatin1String("app:"))) {
         pattern = pattern.mid(4).trimmed();
     }
-    QString cleanName = name.trimmed();
+    // Cap before trim: QString::left() bounds every later pass over the
+    // string; a name longer than the display cap is truncated (as before),
+    // just without ever processing the excess.
+    QString cleanName = (name.size() > kMaxNameLength) ? name.left(kMaxNameLength) : name;
+    cleanName = cleanName.trimmed();
     cleanName.remove(QLatin1Char('|'));
     if (cleanName.size() > kMaxNameLength) {
         cleanName = cleanName.left(kMaxNameLength);
@@ -614,6 +638,9 @@ void VibranceEffect::setAppRuleName(const QString &prefixedPattern, const QStrin
 
 void VibranceEffect::removeAppRule(const QString &prefixedPattern)
 {
+    if (prefixedPattern.size() > kMaxPrefixedPatternLength) {
+        return; // nothing legitimate (or addable) is this long
+    }
     bool titleMatch = false;
     QString pattern = prefixedPattern.trimmed();
     if (pattern.startsWith(QLatin1String("title:"))) {

@@ -74,7 +74,10 @@ no segundo monitor mantêm o visual.
 - **Limites** (contenção de DoS local): no máximo 64 perfis, padrão com até
   128 caracteres, nome de exibição com até 64; efeito, diálogo do tray e
   carregamento de configuração aplicam os mesmos tetos, rejeitando valores
-  não finitos em vez de deixá-los chegar ao compositor. Os padrões são
+  não finitos em vez de deixá-los chegar ao compositor. Strings acima do
+  teto são recusadas antes de qualquer processamento (padrões prefixados
+  brutos ≤ 140 caracteres, nomes de saída ≤ 256) — nenhum caminho de
+  trim/comparação/persistência chega a ver entrada de megabytes. Os padrões são
   comparados por um matcher de glob linear dedicado (sem engine de regex,
   logo sem custo de backtracking a considerar), com comportamento verificado
   como idêntico à tradução para regex anterior.
