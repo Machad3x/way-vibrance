@@ -62,15 +62,21 @@ plugin não podem ser trocados a quente). Ative em *Configurações do Sistema
 → Efeitos da Área de Trabalho → Aparência → Way Vibrance* ou apenas rode
 `wayvibrance-tray`.
 
-**Desinstalar um build manual**: `./scripts/uninstall.sh` — faz o
-hot-unload do efeito na sessão que estiver rodando, remove exatamente os
-arquivos instalados (usa o manifesto do build, `--prefix` para instalações
-no home, `--dry-run` para prévia) e por padrão **mantém** sua configuração,
-imprimindo onde ela fica; `--purge-config` também remove os grupos
-`[Effect-wayvibrance]` do `kwinrc` e apaga `wayvibrancerc` + a entrada de
-autostart. Instalações via pacote usam o gerenciador de pacotes
-(`pacman -Rns way-vibrance`, `dnf remove`, `apt remove`,
-`rpm-ostree uninstall`).
+## Desinstalação
+
+`./scripts/uninstall.sh` — faz o hot-unload do efeito na sessão em execução
+e remove exatamente o que o `scripts/build.sh` instalou. Usa o manifesto do
+build, aceita `--prefix ~/.local` (instalações sem root), `--dry-run` para
+prévia; só pede sudo quando é necessário.
+
+A configuração é **mantida** por padrão e seus caminhos são impressos —
+adicione `--purge-config` para também remover a seção `[Effect-wayvibrance]`
+e seu subgrupo de perfis do `kwinrc` e apagar `wayvibrancerc` + a entrada de
+autostart.
+
+Instalou via **pacote**? Use o gerenciador da sua distro:
+`pacman -Rns way-vibrance` · `dnf remove way-vibrance` ·
+`apt remove way-vibrance` · `rpm-ostree uninstall way-vibrance`.
 
 ## Uso
 
