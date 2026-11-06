@@ -1,4 +1,4 @@
-way-vibrance (@VERSION@-1) unstable; urgency=medium
+way-vibrance (@VERSION@) unstable; urgency=medium
 
   * Per-app/game profiles, primary-monitor output picker, multi-distro
     build support and prebuilt packages. See

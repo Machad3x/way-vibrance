@@ -73,9 +73,9 @@ pkg_deb() { # $1=image $2=label
             libwayland-dev pkg-config >/tmp/apt.log 2>&1 || { tail -3 /tmp/apt.log; exit 1; }
         cd '/work/way-vibrance-$VERSION'
         dpkg-buildpackage -us -uc -b >/tmp/dpkg.log 2>&1 || { tail -25 /tmp/dpkg.log; exit 1; }
-        cp /work/way-vibrance_${VERSION}_amd64.deb /work/ 2>/dev/null || true
+        ls /work/*.deb
     "
-    mv -f "$STAGE"/way-vibrance_"${VERSION}"_amd64.deb "$DIST"/ && echo "    $(ls "$DIST" | grep deb | tail -1)"
+    mv -f "$STAGE"/way-vibrance_*_amd64.deb "$DIST"/ && echo "    $(ls "$DIST" | grep deb | tail -1)"
 }
 
 pkg_arch() {
