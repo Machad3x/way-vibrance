@@ -29,8 +29,8 @@ equivalent to driver vibrance.
 ## Requirements
 
 - KDE Plasma 6 (KWin ≥ 6.0), Wayland session, OpenGL compositing.
-- Verified: Arch (KWin 6.8), Fedora, Debian 13 and Ubuntu 25.04 (6.3.4) —
-  the same source compiles across 6.0 → latest, no version pins.
+- Verified in the container matrix: Arch (KWin 6.8), Fedora 44/45, Debian
+  13/14 (testing), Ubuntu 26.04/26.10 — same source, no pins.
 
 ## Install
 

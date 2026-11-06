@@ -46,6 +46,7 @@ Release ${VERSION}.
 - Tray app: two-pane UI, per-profile editor window with Apply + presets (50/100/125/150/200%), behaviour settings, monitor picker for "only primary monitor" (a fixed output — not the pointer)
 - Configurable global hotkey (KGlobalAccel, conflict detection, persisted)
 - CLI: \`wayvibrance 1.25 | toggle | get | rgb | primary [on|off|get|outputs|output <name>] | app [list|set|del|name|reset|focused]\`
+- Prebuilt packages attached for currently supported releases (Fedora RPM incl. rpm-ostree/Atomic, Debian/Ubuntu DEB, Arch pkg), each built and install-verified in a container of its own release
 
 **Compatibility** — any KDE Plasma 6 Wayland session (source builds against KWin 6.0–6.9+). Requires OpenGL compositing. After upgrading, log out and back in so KWin loads the new effect binary.
 
@@ -79,7 +80,9 @@ notes = (f"Release {ver}.\n\n"
          "- Tray: two-pane UI, profile editor with Apply/presets, monitor picker "
          "for primary-monitor mode (fixed output, not the pointer)\n"
          "- Configurable global hotkey (KGlobalAccel) with conflict detection\n"
-         "- CLI: wayvibrance get/set/toggle/rgb/primary/app\n\n"
+         "- CLI: wayvibrance get/set/toggle/rgb/primary/app\n"
+         "- Prebuilt packages attached for currently supported releases "
+         "(Fedora/Debian/Ubuntu/Arch), install-verified per release\n\n"
          f"Works on any KDE Plasma 6 Wayland session (KWin >= 6.0, OpenGL). "
          "After upgrading, log out and back in so KWin reloads the effect. "
          "Vibe-coded with AI assistance — see README.")

@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 machadex
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Builds the per-distro prebuilt packages (scripts/package.sh) whenever a
+# v* tag is pushed and attaches them to that tag's GitHub release. Uses
+# docker (available on GH runners); it is the same matrix that is verified
+# locally with podman. Package targets are the upstream-supported releases
+# listed in scripts/package.sh — keep them current there and CI follows.
+
+name: prebuilts
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build + install-verify all supported releases
+        run: CONTAINER_TOOL=docker ./scripts/package.sh
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Attach artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/*.rpm
+            dist/*.deb
+            dist/*.pkg.tar.zst
+          make_latest: "false"
