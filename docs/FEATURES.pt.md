@@ -83,9 +83,11 @@ no segundo monitor mantêm o visual.
   pintura, e uma identidade acima do teto fica simplesmente fora do match
   de perfis — um cliente despejando nomes de janela de megabytes não
   consegue cobrar isso do compositor. Os padrões são
-  comparados por um matcher de glob linear dedicado (sem engine de regex,
-  logo sem custo de backtracking a considerar), com comportamento verificado
-  como idêntico à tradução para regex anterior.
+  comparados por um matcher de glob dedicado de custo limitado: no pior caso
+  padrão × texto (≤ 128 × 1024 caracteres) sob um orçamento explícito de
+  passos acima desse produto — sem engine de regex, portanto sem explosão de
+  backtracking —, com comportamento verificado por fuzz como idêntico à
+  tradução para regex anterior.
   As combinações de ganho por perfil têm cache de shaders limitado a 72
   variantes compiladas — teto deliberadamente acima do maior conjunto de
   trabalho legítimo (64 perfis + o global): o pool guarda estilos vivos e

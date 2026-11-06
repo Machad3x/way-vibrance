@@ -81,9 +81,10 @@ monitor's game keeps its look.
   compares or matches them, and an over-cap identity is simply excluded
   from profile matching — a client spamming megabyte window names cannot
   charge the compositor for it. Patterns are matched by a
-  dedicated linear-time glob matcher (no regex engine, so no backtracking
-  cost to reason about) with behavior verified identical to the previous
-  regex translation.
+  dedicated glob matcher with bounded cost: worst case pattern × text
+  (≤ 128 × 1024 chars) under an explicit step budget above that product —
+  no regex engine, hence no backtracking blow-ups — with behavior
+  fuzz-verified identical to the previous regex translation.
   Per-profile gain combinations are shader-cached in a bounded pool of 72
   compiled variants — a ceiling deliberately above the largest legitimate
   working set (64 profiles + the global one), so the pool holds live styles

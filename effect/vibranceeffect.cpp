@@ -65,6 +65,15 @@ static constexpr int kMaxNameLength = 64;
 // renaming its window in a loop.
 static constexpr int kMaxWindowIdentityLength = 1024;
 static constexpr int kMaxOutputNameLength = 256;
+// Hard step budget for glob matching, sized strictly ABOVE the worst case
+// of the greedy matcher within the shipped caps: each loop iteration either
+// advances the text or rewinds to a star (which then advances the text),
+// so total steps are bounded by pattern.size() * text.size(); with the
+// 128/1024 caps that product plus slack is never reachable by legitimate
+// input. The budget therefore cannot alter matching behavior today — it
+// keeps the guarantee if any cap above is ever raised, so a hostile
+// pattern can never turn into unbounded work on the paint path.
+static constexpr int kGlobStepBudget = kMaxPatternLength * kMaxWindowIdentityLength + 4096;
 static constexpr int kMaxPrefixedPatternLength = kMaxPatternLength + 12;
 // Compiled GLShader variants cached for profile gains. Comfortably above
 // any legitimate working set (kMaxAppRules + the global set), yet bounded
@@ -372,10 +381,11 @@ bool VibranceEffect::rgbGainsActive() const
  */
 static bool globMatch(const QString &glob, const QString &text)
 {
-    // Iterative wildcards matcher with a single rewind point: worst case is
-    // a linear scan per '*' run (bounded by glob.size() * text.size() with a
-    // tiny constant). No pattern can explode into backtracking that stalls
-    // the compositor on the paint path. Semantics are the documented glob
+    // Iterative wildcards matcher with a single rewind point: worst-case
+    // work is bounded by glob.size() * text.size() with a tiny constant and
+    // the explicit kGlobStepBudget ceiling. No regex engine, hence no
+    // backtracking blow-ups on the paint path. Semantics are the documented
+    // glob
     // language — historically shipped as a translated, anchored,
     // case-insensitive pattern and re-verified case-by-case identical:
     // '*' spans any run, '?' consumes exactly one character (one UTF-16
@@ -385,10 +395,14 @@ static bool globMatch(const QString &glob, const QString &text)
     int t = 0;
     int starAt = -1;
     int resumeAt = -1;
+    int steps = 0;
     const auto sameCase = [](QChar a, QChar b) {
         return a == b || a.toLower() == b.toLower() || a.toUpper() == b.toUpper();
     };
     while (t < text.size()) {
+        if (++steps > kGlobStepBudget) {
+            return false; // unreachable within shipped caps (see kGlobStepBudget)
+        }
         if (g < glob.size() && glob.at(g) == QLatin1Char('?')) {
             ++g;
             ++t;
@@ -538,7 +552,8 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
     }
     QString cleanName;
     if (name.has_value()) {
-        cleanName = name->trimmed();
+        cleanName = (name->size() > kMaxNameLength) ? QString(name->left(kMaxNameLength)) : *name;
+        cleanName = cleanName.trimmed();
         cleanName.remove(QLatin1Char('|'));
         if (cleanName.size() > kMaxNameLength) {
             cleanName = cleanName.left(kMaxNameLength);

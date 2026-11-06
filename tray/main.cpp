@@ -210,11 +210,13 @@ public:
                 });
 
         // The effect may already be running (loaded by a previous session's
-        // configuration); connect to it right away.
-        const QDBusReply<bool> registered =
-            QDBusConnection::sessionBus().interface()->isServiceRegistered(QLatin1String(s_vibranceService));
-        if (registered.isValid() && registered.value()) {
-            attachInterface();
+        // configuration); connect to it right away. interface() may be null
+        // (no session bus) — same guarded access used everywhere above.
+        if (auto *iface = QDBusConnection::sessionBus().interface()) {
+            const QDBusReply<bool> registered = iface->isServiceRegistered(QLatin1String(s_vibranceService));
+            if (registered.isValid() && registered.value()) {
+                attachInterface();
+            }
         }
     }
 
