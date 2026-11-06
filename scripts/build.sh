@@ -44,6 +44,13 @@ else
     SUDO=""   # dependency steps will fail loudly if privileges are truly needed
 fi
 
+# Installing under the user's home never needs root (KWin still loads the
+# effect from system dirs or via a nested/QT_PLUGIN_PATH session check).
+INSTALL_SUDO="$SUDO"
+case "$PREFIX" in
+    "$HOME"*) INSTALL_SUDO="" ;;
+esac
+
 detect_family() {
     [ -r /etc/os-release ] || return 1
     local ID="" ID_LIKE="" tok
@@ -238,7 +245,7 @@ cmake --build "$BUILD_DIR" --parallel "$(nproc)"
 
 if [ "$INSTALL" = 1 ]; then
     echo "==> Installing…"
-    $SUDO cmake --install "$BUILD_DIR"
+    $INSTALL_SUDO cmake --install "$BUILD_DIR"
 fi
 
 echo "==> Loading the effect into KWin…"
