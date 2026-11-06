@@ -42,9 +42,11 @@ distro from the [latest release](https://github.com/Machad3x/way-vibrance/releas
 **Or build (any supported distro):**
 
 ```
-./scripts/build.sh          # installs only missing dev packages — never updates your system
-sudo cmake --install build  # (build.sh does this automatically when run with sudo)
+./scripts/build.sh     # checks deps (installs only what is missing, never
+                       # updates the system) → configure → build → install
 ```
+
+Need manual control: `cmake --build build && sudo cmake --install build`.
 
 Then **log out and back in** so KWin loads the plugin (plugin binaries
 cannot be hot-swapped by KWin). Enable via *System Settings → Desktop
