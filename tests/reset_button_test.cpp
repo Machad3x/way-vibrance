@@ -17,7 +17,10 @@
       4. the visual contract (18x18, circular glyph, tooltip naming the
          value, accessible name) is intact, and the button is styled by the
          shared application sheet rather than an inline stylesheet, so a KDE
-         colour-scheme switch re-polishes it together with every widget.
+         colour-scheme switch re-polishes it together with every widget;
+      5. the adjacent percentage label is right-aligned and has a fixed
+         width for the slider's maximum, so rows with different values keep
+         the percentage digits and the reset buttons in one column.
 
     Runs offscreen, no session bus needed. Exit code != 0 on failure.
 */
@@ -112,6 +115,23 @@ int main(int argc, char **argv)
         check(reset->toolTip() == QStringLiteral("Reset to default (150%)"), "custom default in tooltip");
         reset->click();
         check(slider.value() == 150, "custom default restored");
+    }
+
+    // ---- 5. percentage labels keep the trailing button column stable ----
+    {
+        QWidget parent;
+        QLabel *wide = createSliderValueLabel(&parent, 200);
+        QLabel *shortValue = createSliderValueLabel(&parent, 200);
+        check(wide->alignment().testFlag(Qt::AlignRight), "percentage right-aligned");
+        check(wide->alignment().testFlag(Qt::AlignVCenter), "percentage vertically centred");
+        wide->setText(QStringLiteral("200%"));
+        shortValue->setText(QStringLiteral("5%"));
+        check(wide->width() == shortValue->width(),
+              "same column width regardless of the displayed value");
+        check(wide->width() > wide->fontMetrics().horizontalAdvance(QStringLiteral("200%")),
+              "column width fits the widest value");
+        check(wide->minimumWidth() == wide->maximumWidth(),
+              "fixed width (not a growing label) is what aligns the rows");
     }
 
     fprintf(stderr, "reset_button_test: total=%d failures=%d\n", s_total, s_failed);

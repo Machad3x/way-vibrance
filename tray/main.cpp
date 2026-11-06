@@ -989,20 +989,25 @@ public:
             connect(m_name, &QLineEdit::textChanged, this, [this] { markDirty(); });
         }
 
-        layout->addWidget(new QLabel(tr("Vibrance of matching windows"), this));
-        makeSliderRow(layout, QString(), QString(), kMinPercent, m_vibSlider, m_vibValue);
+        // Same card treatment as the RGB gains below, so the slider,
+        // percentage column and reset buttons line up across both sections.
+        auto *vibranceBox = new QGroupBox(tr("Vibrance of matching windows"), this);
+        auto *vibranceLayout = new QVBoxLayout(vibranceBox);
+        vibranceLayout->setSpacing(6);
+        makeSliderRow(vibranceLayout, QString(), QString(), kMinPercent, m_vibSlider, m_vibValue);
 
         // Quick values, same set as the global presets row.
         auto *presetRow = new QHBoxLayout();
         for (int percent : {50, 100, 125, 150, 200}) {
-            auto *presetButton = new QPushButton(QStringLiteral("%1%").arg(percent), this);
+            auto *presetButton = new QPushButton(QStringLiteral("%1%").arg(percent), vibranceBox);
             connect(presetButton, &QPushButton::clicked, this, [this, percent] {
                 m_vibSlider->setValue(percent); // the valueChanged path marks dirty and refreshes the label
             });
             presetRow->addWidget(presetButton);
         }
         presetRow->addStretch();
-        layout->addLayout(presetRow);
+        vibranceLayout->addLayout(presetRow);
+        layout->addWidget(vibranceBox);
 
         if (fullApi) {
             m_gainsBox = new QGroupBox(tr("Channel gains (these windows only)"), this);
@@ -1140,12 +1145,11 @@ private:
         slider = new QSlider(Qt::Horizontal, this);
         slider->setRange(minimum, kMaxPercent);
         slider->setValue(100);
-        value = new QLabel(this);
-        value->setMinimumWidth(44);
+        value = createSliderValueLabel(this, kMaxPercent);
         value->setText(QStringLiteral("100%"));
-        row->addWidget(slider);
-        row->addWidget(value);
-        row->addWidget(createResetButton(this, slider, 100));
+        row->addWidget(slider, 1);
+        row->addWidget(value, 0, Qt::AlignVCenter);
+        row->addWidget(createResetButton(this, slider, 100), 0, Qt::AlignVCenter);
         layout->addLayout(row);
         connect(slider, &QSlider::valueChanged, this, [this, value](int percent) {
             value->setText(QStringLiteral("%1%").arg(percent));
@@ -1210,24 +1214,45 @@ public:
         m_statusLabel = new QLabel(central);
         outerLayout->addWidget(m_statusLabel);
 
+        // The primary slider lives in a card like every other section, so
+        // its percentage column and reset button line up with the RGB rows
+        // instead of extending to the window edge.
+        auto *vibranceGroup = new QGroupBox(tr("Vibrance"), central);
+        auto *vibranceLayout = new QVBoxLayout(vibranceGroup);
+        vibranceLayout->setSpacing(6);
+
         auto *row = new QHBoxLayout();
-        m_slider = new QSlider(Qt::Horizontal, central);
+        m_slider = new QSlider(Qt::Horizontal, vibranceGroup);
         m_slider->setRange(kMinPercent, kMaxPercent);
         m_slider->setValue(100);
-        m_valueLabel = new QLabel(central);
-        m_valueLabel->setMinimumWidth(48);
+        m_valueLabel = createSliderValueLabel(vibranceGroup, kMaxPercent);
         // The slider starts at 100 but does not emit valueChanged for its
         // initial value; without this the row shows an empty gap until the
         // first state push (and forever when the effect is unavailable).
         m_valueLabel->setText(QStringLiteral("100%"));
-        row->addWidget(m_slider);
-        row->addWidget(m_valueLabel);
-        row->addWidget(createResetButton(central, m_slider, 100));
-        outerLayout->addLayout(row);
+        row->addWidget(m_slider, 1);
+        row->addWidget(m_valueLabel, 0, Qt::AlignVCenter);
+        row->addWidget(createResetButton(vibranceGroup, m_slider, 100), 0, Qt::AlignVCenter);
+        vibranceLayout->addLayout(row);
 
-        m_enabledCheck = new QCheckBox(tr("Enabled"), central);
+        m_enabledCheck = new QCheckBox(tr("Enabled"), vibranceGroup);
         m_enabledCheck->setChecked(true);
-        outerLayout->addWidget(m_enabledCheck);
+        vibranceLayout->addWidget(m_enabledCheck);
+
+        auto *presets = new QHBoxLayout();
+        for (int percent : {50, 100, 125, 150, 200}) {
+            auto *button = new QPushButton(QStringLiteral("%1%").arg(percent), vibranceGroup);
+            connect(button, &QPushButton::clicked, this, [this, percent] {
+                setPercent(percent);
+                if (m_controller) {
+                    m_controller->requestVibrancePercent(percent);
+                }
+            });
+            presets->addWidget(button);
+        }
+        presets->addStretch();
+        vibranceLayout->addLayout(presets);
+        outerLayout->addWidget(vibranceGroup);
 
         // Per-channel RGB gains (like the driver's color page). Percent
         // values map to gain multipliers (100% = neutral 1.0).
@@ -1253,13 +1278,12 @@ public:
             auto *slider = new QSlider(Qt::Horizontal, rgbGroup);
             slider->setRange(kRgbMinPercent, kMaxPercent);
             slider->setValue(100);
-            auto *value = new QLabel(rgbGroup);
-            value->setMinimumWidth(48);
+            auto *value = createSliderValueLabel(rgbGroup, kMaxPercent);
             value->setText(QStringLiteral("100%"));
             row->addWidget(name);
-            row->addWidget(slider);
-            row->addWidget(value);
-            row->addWidget(createResetButton(rgbGroup, slider, 100));
+            row->addWidget(slider, 1);
+            row->addWidget(value, 0, Qt::AlignVCenter);
+            row->addWidget(createResetButton(rgbGroup, slider, 100), 0, Qt::AlignVCenter);
             rgbLayout->addLayout(row);
             this->*(ch.member) = slider;
             this->*(ch.label) = value;
@@ -1277,20 +1301,6 @@ public:
         });
         rgbLayout->addWidget(rgbReset);
         outerLayout->addWidget(rgbGroup);
-
-        auto *presets = new QHBoxLayout();
-        for (int percent : {50, 100, 125, 150, 200}) {
-            auto *button = new QPushButton(QStringLiteral("%1%").arg(percent), central);
-            connect(button, &QPushButton::clicked, this, [this, percent] {
-                setPercent(percent);
-                if (m_controller) {
-                    m_controller->requestVibrancePercent(percent);
-                }
-            });
-            presets->addWidget(button);
-        }
-        presets->addStretch();
-        outerLayout->addLayout(presets);
 
         // Per-app profiles (the counterpart of vibrance-gui's per-game
         // settings): matching windows override the global vibrance — and can
