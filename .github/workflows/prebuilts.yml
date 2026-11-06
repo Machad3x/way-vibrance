@@ -30,6 +30,8 @@ jobs:
     # Must pass before the packaging matrix is worth its artifacts.
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read   # this job reads the repo and runs a test; nothing else
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt6 dev tooling
@@ -45,10 +47,27 @@ jobs:
           ./glob_match_test
 
   packages:
+    needs: matcher-tests   # a red matcher fuzz must gate the artifacts (jobs
+                           # run in parallel without this)
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: write      # release asset attach/clear only
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve release tag (validated)
+        # NEVER interpolate ${{ }} into shell: workflow_dispatch inputs are
+        # attacker-controllable strings (script injection + token exposure).
+        # The value crosses into shell via env only, must match a plain
+        # semver tag, and flows onward via GITHUB_OUTPUT.
+        id: rel
+        env:
+          WANT: ${{ inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$WANT" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid release tag" >&2; exit 1; }
+          echo "tag=$WANT" >> "$GITHUB_OUTPUT"
 
       - name: Build + install-verify all supported releases
         run: CONTAINER_TOOL=docker ./scripts/package.sh
@@ -63,8 +82,9 @@ jobs:
         # step fails with "already_exists".
         env:
           GH_TOKEN: ${{ github.token }}
+          REL: ${{ steps.rel.outputs.tag }}
         run: |
-          REL="${{ github.event.inputs.version || github.ref_name }}"
+          set -euo pipefail
           for f in dist/*.rpm dist/*.deb dist/*.pkg.tar.zst; do
             [ -e "$f" ] || continue
             name="$(basename "$f")"
@@ -75,7 +95,7 @@ jobs:
       - name: Attach artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          tag_name: ${{ steps.rel.outputs.tag }}
           files: |
             dist/*.rpm
             dist/*.deb

@@ -25,7 +25,9 @@ find_package(KWin REQUIRED)
 add_subdirectory(effect)
 add_subdirectory(tray)
 
-enable_testing()
-add_subdirectory(tests)
+include(CTest)   # BUILD_TESTING option; package recipes set it OFF
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
 
 install(PROGRAMS cli/wayvibrance DESTINATION ${KDE_INSTALL_BINDIR})

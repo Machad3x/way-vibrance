@@ -21,7 +21,8 @@ sha256sums=('@SHA256@')
 build() {
     cd "$srcdir/way-vibrance-$pkgver"
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
+        -DCMAKE_INSTALL_PREFIX=/usr -DKDE_INSTALL_USE_QT_SYS_PATHS=ON \
+        -DBUILD_TESTING=OFF
     cmake --build build
 }
 

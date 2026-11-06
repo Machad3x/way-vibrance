@@ -45,7 +45,7 @@ D-Bus, with all state persisted to kwinrc.
 %autosetup -n %{name}-%{version}
 
 %build
-%cmake -DCMAKE_BUILD_TYPE=Release -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
+%cmake -DCMAKE_BUILD_TYPE=Release -DKDE_INSTALL_USE_QT_SYS_PATHS=ON -DBUILD_TESTING=OFF
 %cmake_build
 
 %install

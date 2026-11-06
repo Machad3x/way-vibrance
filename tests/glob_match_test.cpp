@@ -162,27 +162,69 @@ int main()
                     budget, matches);
             ++s_mismatch;
         }
-        // Adversarial ceiling: worst 128-char pattern x 1024 identity must
-        // terminate, refuse later rules via the shared budget, and stay
-        // within one resolve's ceiling.
-        QString evil;
-        for (int i = 0; i < 63; ++i) evil += QStringLiteral("*a");
-        evil += QLatin1Char('b');
-        const QString evilText(1023, QLatin1Char('a'));
-        const int b2 = kResolveStepBudget;
-        int b2rem = b2;
-        globMatch(evil, evilText, &b2rem); // worst pattern x worst text
-        const int consumed = b2 - b2rem;
-        if (consumed <= 0 || consumed > kGlobStepBudget + 1) {
-            fprintf(stderr, "BUDGET-FAIL adversarial single call escaped per-call ceiling\n");
+        // TRUE worst cost for the greedy matcher: a '*' followed by a long
+        // literal run that only fails at its last char, against text made of
+        // that same char. Every star rewind re-scans the literal suffix, so
+        // cost is text x suffix, not a single pass.
+        QString evil = QStringLiteral("*") + QString(126, QLatin1Char('a')) + QLatin1Char('b');
+        const QString evilText(1024, QLatin1Char('a')); // never ends in 'b'
+        if (referenceMatch(evil, evilText) != false || globMatch(evil, evilText) != false) {
+            fprintf(stderr, "WORSTCASE-FAIL expected no-match\n");
             ++s_mismatch;
         }
-        // Exhaust the aggregate and ensure later rules quickly refuse.
-        int b3 = 100; // tiny aggregate
-        globMatch(evil, evilText, &b3);
-        const QString shortPat = QStringLiteral("*zz*qq");
-        if (!globMatch(shortPat, QStringLiteral("anything"), &b3)) {
-            // exhausted aggregate must not crash; result may be false
+        const int b2 = kResolveStepBudget;
+        int b2rem = b2;
+        globMatch(evil, evilText, &b2rem);
+        const int consumed = b2 - b2rem;
+        // must actually exercise the cost (thousands of re-scans...), stay
+        // under the per-call ceiling, and refuse when the ceiling hits.
+        if (consumed < 30000 || consumed > kGlobStepBudget + 1) {
+            fprintf(stderr, "BUDGET-FAIL worst-case consumed %d (want 30000..%d)\n",
+                    consumed, kGlobStepBudget + 1);
+            ++s_mismatch;
+        }
+
+        // Exhaust a small shared budget: the call must refuse, report the
+        // budget as spent (<=0), and later rules sharing it must refuse
+        // immediately instead of restarting expensive scans.
+        int b3 = 100;
+        const bool r3 = globMatch(evil, evilText, &b3);
+        if (r3 || b3 > 0) {
+            fprintf(stderr, "BUDGET-FAIL tiny aggregate: result=%d budget=%d (want false, <=0)\n",
+                    int(r3), b3);
+            ++s_mismatch;
+        }
+        const int b3before = b3;
+        const bool r4 = globMatch(evil, evilText, &b3); // same exhausted budget
+        if (r4 || b3before - b3 > 2) {
+            fprintf(stderr, "BUDGET-FAIL exhausted budget still worked (%d steps)\n", b3before - b3);
+            ++s_mismatch;
+        }
+
+        // Aggregate emulation of a resolve pass: 64 worst-case rules (x two
+        // ids = 128 walks) sharing one kResolveStepBudget must stop exactly
+        // at the ceiling: each walk obeys the per-call cap, the shared one
+        // refuses anything past it, final budget cannot go below -1.
+        int agg = kResolveStepBudget;
+        for (int i = 0; i < kMaxResolveWalks; ++i) {
+            globMatch(evil, evilText, &agg);
+        }
+        // Full walks consume until the shared budget is gone; every later
+        // walk refuses at its first step (one decrement). Worst total
+        // overshoot is therefore bounded by the number of walks.
+        if (agg < -kMaxResolveWalks || agg > kResolveStepBudget - 30000) {
+            fprintf(stderr, "BUDGET-FAIL aggregate out of sane band (%d left)\n", agg);
+            ++s_mismatch;
+        }
+        // and one walk more is refused nearly instantly
+        const int before = agg;
+        const bool exhaustedResult = globMatch(evil, evilText, &agg);
+        if (exhaustedResult || before - agg > 1) {
+            // post-exhaustion walks: false, at most the one decrement of
+            // the loop's first check
+            fprintf(stderr, "BUDGET-FAIL post-exhaust walk cost %d (result %d)\n",
+                    before - agg, int(exhaustedResult));
+            ++s_mismatch;
         }
     }
 

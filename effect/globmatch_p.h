@@ -30,10 +30,13 @@ constexpr int kMaxWindowIdentityLength = 1024;
 constexpr int kGlobStepBudget = kMaxPatternLength * kMaxWindowIdentityLength + 4096;
 
 // Aggregate budget for one resolveWindow() pass (up to 64 rules, app rules
-// scanning two identities). Realistic rule sets consume a few thousand
-// steps end-to-end; the aggregate caps adversarial all-worst-case sets at
-// ~1ms per identity CHANGE (never per frame — unchanged identities exit
-// through the stamp/compare fast path long before matching).
+// scanning two identities = <=128 matcher walks). Realistic rule sets
+// consume a few thousand steps end-to-end, far below this; adversarial
+// all-worst-case sets are cut short once it is spent — every later walk
+// refuses after a single step (the loop's first check), so a pass costs
+// at most kResolveStepBudget + walks total (~1ms worst case), and only on
+// identity CHANGE, never per frame (stamp fast path runs first).
+constexpr int kMaxResolveWalks = 64 * 2; // keep in sync with kMaxAppRules (effect)
 constexpr int kResolveStepBudget = 1'000'000;
 
 /**
