@@ -39,6 +39,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <cmath>
+
 #include <KAboutData>
 #include <KConfigGroup>
 #include <KDBusService>
@@ -55,6 +57,22 @@ static constexpr int kMinPercent = 0;
 static constexpr int kMaxPercent = 200;
 static constexpr int kRgbMinPercent = 0;
 static constexpr int kRgbMaxPercent = 200;
+
+// Same ceilings the effect enforces on D-Bus input — the tray mirrors them
+// so a hostile emitter cannot inflate the UI list or the parsed fields.
+static constexpr int kMaxProfiles = 64;
+static constexpr int kMaxPatternLength = 128;
+static constexpr int kMaxNameLength = 64;
+
+/** Finite + within the effect's accepted range; the UI speaks percents. */
+static bool saneFactor(const QVariant &v, double &out)
+{
+    if (v.metaType().id() != QMetaType::Double || !std::isfinite(v.toDouble())) {
+        return false;
+    }
+    out = qBound(0.0, v.toDouble(), 2.0);
+    return true;
+}
 
 /**
  * Bridges the UI to the effect over D-Bus, coalescing slider movements so
@@ -90,6 +108,25 @@ public:
                 this, &VibranceController::onServiceRegistered);
         connect(&m_watcher, &QDBusServiceWatcher::serviceUnregistered,
                 this, &VibranceController::onServiceUnregistered);
+
+        // Well-known names are spoofable by any session peer, so signals are
+        // trusted by UNIQUE sender identity: keep the current owner of our
+        // name cached and drop anything else in onSignal().
+        if (auto *iface = QDBusConnection::sessionBus().interface()) {
+            m_serviceOwner = iface->serviceOwner(QLatin1String(s_vibranceService)).value();
+        }
+        connect(&m_watcher, &QDBusServiceWatcher::serviceOwnerChanged, this,
+                [this](const QString &name, const QString &, const QString &newOwner) {
+                    if (name != QLatin1String(s_vibranceService)) {
+                        return;
+                    }
+                    m_serviceOwner = newOwner;
+                    if (newOwner.isEmpty()) {
+                        detachInterface();
+                    } else if (!m_interface) {
+                        attachInterface();
+                    }
+                });
 
         // The effect may already be running (loaded by a previous session's
         // configuration); connect to it right away.
@@ -387,18 +424,42 @@ private Q_SLOTS:
             || msg.path() != QLatin1String(s_vibrancePath)) {
             return;
         }
+        // Only the connection that currently OWNS the well-known name is
+        // trusted (that owner is kept fresh via serviceOwnerChanged).
+        if (m_serviceOwner.isEmpty() || msg.service() != m_serviceOwner) {
+            return;
+        }
         const QList<QVariant> args = msg.arguments();
         const QString member = msg.member();
         if (member == QLatin1String("vibranceChanged") && args.size() == 1) {
-            onVibranceChanged(args.at(0).toDouble());
+            double v = 0.0;
+            if (saneFactor(args.at(0), v)) {
+                onVibranceChanged(v);
+            }
         } else if (member == QLatin1String("enabledChanged") && args.size() == 1) {
-            onEnabledChanged(args.at(0).toBool());
+            if (args.at(0).metaType().id() == QMetaType::Bool) {
+                onEnabledChanged(args.at(0).toBool());
+            }
         } else if (member == QLatin1String("rgbGainsChanged") && args.size() == 3) {
-            onRGBGainsChanged(args.at(0).toDouble(), args.at(1).toDouble(), args.at(2).toDouble());
+            double r = 0.0, g = 0.0, b = 0.0;
+            if (saneFactor(args.at(0), r) && saneFactor(args.at(1), g) && saneFactor(args.at(2), b)) {
+                onRGBGainsChanged(r, g, b);
+            }
         } else if (member == QLatin1String("primaryOnlyChanged") && args.size() == 1) {
-            onPrimaryOnlyChanged(args.at(0).toBool());
+            if (args.at(0).metaType().id() == QMetaType::Bool) {
+                onPrimaryOnlyChanged(args.at(0).toBool());
+            }
         } else if (member == QLatin1String("appRulesChanged") && args.size() == 1) {
-            onAppRulesChanged(args.at(0).toStringList());
+            QStringList rules = args.at(0).toStringList();
+            if (rules.size() > kMaxProfiles) {
+                rules = rules.mid(0, kMaxProfiles);
+            }
+            rules.removeIf([](const QString &e) {
+                const int sep = e.indexOf(QLatin1Char('|'));
+                const int patternLen = sep < 0 ? e.size() : sep; // +6 covers app:/title:
+                return e.isEmpty() || patternLen > kMaxPatternLength + 6 || e.size() > 512;
+            });
+            onAppRulesChanged(rules);
         }
     }
 
@@ -479,6 +540,9 @@ private:
         if (m_interface) {
             return;
         }
+        if (auto *iface = QDBusConnection::sessionBus().interface()) {
+            m_serviceOwner = iface->serviceOwner(QLatin1String(s_vibranceService)).value();
+        }
         m_interface = new QDBusInterface(QString::fromLatin1(s_vibranceService),
                                          QString::fromLatin1(s_vibrancePath),
                                          QString::fromLatin1(s_vibranceInterface),
@@ -537,6 +601,7 @@ private:
     }
 
     QDBusInterface *m_interface = nullptr;
+    QString m_serviceOwner; // unique bus name of the org.wayvibrance owner
     QTimer m_timer;
     int m_pendingPercent = -1;
     double m_lastSent = -1.0;
@@ -587,11 +652,14 @@ static bool parseProfileEntry(const QString &entry, ProfileValues &out)
     }
     bool ok = false;
     const double vib = fields.at(1).toDouble(&ok);
-    if (!ok) {
+    if (!ok || !std::isfinite(vib)) {
+        return false;
+    }
+    if (fields.at(0).size() > kMaxPatternLength + 6) { // +6 covers the app:/title: prefix
         return false;
     }
     out.prefixedPattern = fields.at(0);
-    out.vibrancePercent = qBound(0, static_cast<int>(qRound(vib * 100.0)), 200);
+    out.vibrancePercent = qBound(0, static_cast<int>(qRound(qBound(0.0, vib, 2.0) * 100.0)), 200);
     if (fields.size() >= 3) {
         const QStringList gains = fields.at(2).split(QLatin1Char(','));
         if (gains.size() != 3) {
@@ -609,13 +677,16 @@ static bool parseProfileEntry(const QString &entry, ProfileValues &out)
         if (!ok) {
             return false;
         }
-        out.redPercent = qBound(0, static_cast<int>(qRound(r * 100.0)), 200);
-        out.greenPercent = qBound(0, static_cast<int>(qRound(g * 100.0)), 200);
-        out.bluePercent = qBound(0, static_cast<int>(qRound(b * 100.0)), 200);
+        if (!std::isfinite(r) || !std::isfinite(g) || !std::isfinite(b)) {
+            return false;
+        }
+        out.redPercent = qBound(0, static_cast<int>(qRound(qBound(0.0, r, 2.0) * 100.0)), 200);
+        out.greenPercent = qBound(0, static_cast<int>(qRound(qBound(0.0, g, 2.0) * 100.0)), 200);
+        out.bluePercent = qBound(0, static_cast<int>(qRound(qBound(0.0, b, 2.0) * 100.0)), 200);
         out.hasGains = out.redPercent != 100 || out.greenPercent != 100 || out.bluePercent != 100;
     }
     if (fields.size() == 4) {
-        out.displayName = fields.at(3);
+        out.displayName = fields.at(3).left(kMaxNameLength);
     }
     return true;
 }
@@ -666,6 +737,7 @@ public:
         m_kind->addItem(tr("App ID / class"));
         m_kind->addItem(tr("Window title"));
         m_pattern = new QLineEdit(this);
+        m_pattern->setMaxLength(kMaxPatternLength);
         m_pattern->setPlaceholderText(QStringLiteral("firefox, *steam*, org.kde.dolphin…"));
         matchRow->addWidget(m_kind);
         matchRow->addWidget(m_pattern, 1);
@@ -676,6 +748,7 @@ public:
             auto *nameRow = new QHBoxLayout();
             nameRow->addWidget(new QLabel(tr("Display name"), this));
             m_name = new QLineEdit(this);
+            m_name->setMaxLength(kMaxNameLength);
             m_name->setPlaceholderText(tr("cosmetic — matching still uses the pattern"));
             nameRow->addWidget(m_name, 1);
             layout->addLayout(nameRow);

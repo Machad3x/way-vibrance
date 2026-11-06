@@ -68,6 +68,10 @@ monitor's game keeps its look.
   saved silently on OK); the dialog hides features the running effect build
   cannot do.
 - **Persistence**: `[Effect-wayvibrance][WayVibranceAppRules]` in `kwinrc`.
+- **Limits** (local-DoS containment): at most 64 profiles, pattern up to
+  128 characters, display name up to 64; the effect, the tray dialog and the
+  config load all enforce the same ceilings, rejecting non-finite values
+  rather than letting them reach the compositor.
 
 ## Hotkey & behaviour settings
 
@@ -122,8 +126,11 @@ Profile serialization: `kind:pattern|vibrance[|r,g,b[|display-name]]`
 | `~/.config/autostart/org.kde.wayvibrance-tray.desktop` | autostart toggle |
 
 `scripts/uninstall.sh [--prefix PATH] [--purge-config] [--dry-run]` removes
-a manually installed build, hot-unloading the effect first; package
-installs are uninstalled with the package manager.
+a manually installed build, hot-unloading the effect first; every removal
+candidate (build manifest included) is validated against the prefix and a
+file allowlist before anything is deleted, so a tampered workspace manifest
+can never smuggle unrelated paths into `sudo rm`. Package installs are
+uninstalled with the package manager.
 
 ## Version compatibility
 
@@ -195,6 +202,9 @@ Everything runs in **userspace**:
 - no daemons, no kernel modules, no network access, no telemetry;
 - D-Bus on the **session bus only** (`org.wayvibrance` service + the tray's
   own component name); no system bus usage;
+- the tray trusts effect signals only from the connection that currently
+  **owns** `org.wayvibrance` (service-owner check), so other session peers
+  cannot spoof the state it displays;
 - writes only to `~/.config/kwinrc` (effect state, managed by KWin itself),
   `~/.config/wayvibrancerc` (hotkey/behaviour) and the optional autostart
   `.desktop`;

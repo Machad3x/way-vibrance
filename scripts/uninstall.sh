@@ -64,58 +64,89 @@ if [ -n "$QDBUS" ]; then
     "$QDBUS" org.kde.KWin /Effects org.kde.kwin.Effects.unloadEffect wayvibrance >/dev/null 2>&1 || true
 fi
 
-# 2. Remove installed files. Prefer the exact manifest written by the
-#    install step; its recorded prefix is detected and re-rooted onto
-#    --prefix (so `--prefix ~/.local` also works when the tree was built
-#    for /usr, and vice versa without privileges). Fall back to the
-#    canonical file set when there is no manifest.
+# 2. Remove installed files: the manifest written by the install step
+#    (re-rooted onto --prefix) plus the canonical file set — but every
+#    candidate must pass the allowlist below (absolute, canonical, inside
+#    the prefix, and one of Way Vibrance's own files) before anything is
+#    deleted. A tampered or stale workspace manifest can therefore never
+#    turn sudo rm into an arbitrary deletion tool.
+ALLOWLIST_OK=1
 if [ -f build/install_manifest.txt ]; then
     echo "==> Removing installed files (manifest re-rooted at $PREFIX + canonical set)"
     mapfile -t MANIFEST < <(
         python3 - "$PREFIX" build/install_manifest.txt <<'PY'
-import sys, re
-prefix, path = sys.argv[1], sys.argv[2]
-for line in open(path):
-    l = line.strip()
-    if not l:
+import os, re, sys
+
+prefix = os.path.realpath(sys.argv[1])
+seen, rejected = set(), 0
+roots = [l.split("\x00", 1)[0].strip() for l in open(sys.argv[2]) if l.strip()]
+# Canonical set: always attempted, covers manifest-less and drifted trees.
+roots.append("$CANONICAL$")
+
+for path in roots:
+    if path == "$CANONICAL$":
+        for libdir in ("lib", "lib32", "lib64"):
+            for root in (prefix + "/" + libdir,):
+                for sub in ("plugins/kwin/effects/plugins",
+                            "qt6/plugins/kwin/effects/plugins",
+                            "qt/plugins/kwin/effects/plugins"):
+                    cand = root + "/" + sub + "/wayvibrance.so"
+                    if cand not in seen:
+                        seen.add(cand)
+                        print(cand)
+        for cand in (prefix + "/bin/wayvibrance", prefix + "/bin/wayvibrance-tray",
+                     prefix + "/share/applications/org.kde.wayvibrance-tray.desktop"):
+            if cand not in seen:
+                seen.add(cand)
+                print(cand)
         continue
-    m = re.match(r'^(.*?)/(bin|lib[^/]*|share|include)/', l)
-    if m:
-        print(prefix + "/" + l[m.start(2):])
-    else:
-        print(l)
+    m = re.match(r"^(.*?)/(bin|lib[^/]*|share|include)/", path)
+    cand = prefix + "/" + path[m.start(2):] if m else path
+    cand = os.path.realpath(cand)
+    rel = os.path.relpath(cand, prefix)
+    base = os.path.basename(cand)
+    owner = (rel in ("bin/wayvibrance", "bin/wayvibrance-tray",
+                     "share/applications/org.kde.wayvibrance-tray.desktop")
+             or (base == "wayvibrance.so" and "/plugins/kwin/effects/plugins/" in cand))
+    if not owner:
+        rejected += 1
+        print("REJECT %s" % cand, file=sys.stderr)
+        continue
+    if rel in (os.curdir, os.pardir) or rel.startswith(os.pardir + os.sep):
+        rejected += 1
+        print("REJECT %s (outside prefix)" % cand, file=sys.stderr)
+        continue
+    if cand not in seen:
+        seen.add(cand)
+        print(cand)
+
+print("validated %d path(s), rejected %d" % (len(seen), rejected), file=sys.stderr)
 PY
-        { find "$PREFIX"/lib*/plugins/kwin/effects/plugins "$PREFIX"/lib*/qt6/plugins/kwin/effects/plugins \
-              -maxdepth 1 -name wayvibrance.so 2>/dev/null || true
-          echo "$PREFIX/bin/wayvibrance"
-          echo "$PREFIX/bin/wayvibrance-tray"
-          echo "$PREFIX/share/applications/org.kde.wayvibrance-tray.desktop"; }
-    )
-    mapfile -t MANIFEST < <(printf '%s\n' "${MANIFEST[@]}" | sort -u)
-    if [ "$DRY" = 1 ]; then
-        printf 'DRY: rm -f %s\n' "${MANIFEST[@]}"
+    ) || ALLOWLIST_OK=0
+fi
+if [ "${ALLOWLIST_OK}" = 0 ] || [ -z "${MANIFEST[*]:-}" ]; then
+    if [ -f build/install_manifest.txt ]; then
+        echo "==> Manifest failed validation; removing the canonical file set under $PREFIX only"
     else
-        if needs_sudo "${MANIFEST[@]}" && command -v sudo >/dev/null 2>&1; then
-            SUDO="sudo"
-        fi
-        printf '%s\0' "${MANIFEST[@]}" | $SUDO xargs -0 rm -f
+        echo "==> No build manifest found; removing the canonical file set under $PREFIX"
     fi
+    ALLOWLIST_OK=1
+    MANIFEST=()
+    for f in "$PREFIX"/lib*/plugins/kwin/effects/plugins/wayvibrance.so \
+             "$PREFIX"/lib*/qt6/plugins/kwin/effects/plugins/wayvibrance.so \
+             "$PREFIX"/bin/wayvibrance "$PREFIX"/bin/wayvibrance-tray \
+             "$PREFIX"/share/applications/org.kde.wayvibrance-tray.desktop; do
+        MANIFEST+=("$f")
+    done
+fi
+mapfile -t MANIFEST < <(printf '%s\n' "${MANIFEST[@]}" | sort -u)
+if [ "$DRY" = 1 ]; then
+    printf 'DRY: rm -f %s\n' "${MANIFEST[@]}"
 else
-    echo "==> No build manifest found; removing the canonical file set under $PREFIX"
-    mapfile -t FILES < <(
-        { find "$PREFIX"/lib*/qt6/plugins/kwin/effects/plugins -maxdepth 1 -name wayvibrance.so 2>/dev/null || true
-          echo "$PREFIX/bin/wayvibrance"
-          echo "$PREFIX/bin/wayvibrance-tray"
-          echo "$PREFIX/share/applications/org.kde.wayvibrance-tray.desktop"; } | sort -u
-    )
-    if needs_sudo "${FILES[@]}" && command -v sudo >/dev/null 2>&1; then
+    if needs_sudo "${MANIFEST[@]}" && command -v sudo >/dev/null 2>&1; then
         SUDO="sudo"
     fi
-    for f in "${FILES[@]}"; do
-        [ -e "$f" ] || continue
-        run $SUDO rm -f "$f"
-        echo "    removed $f"
-    done
+    printf '%s\0' "${MANIFEST[@]}" | $SUDO xargs -0 rm -f
 fi
 
 # 3. Configuration: purged only on demand; always reported.

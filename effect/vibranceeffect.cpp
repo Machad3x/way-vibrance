@@ -31,6 +31,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <cmath>
 
 // The drawWindow() hook this effect overrides is present with compatible
 // semantics since KWin 6.0 (effects API 0.236). Fail with a clear message on
@@ -48,6 +49,25 @@ static constexpr auto s_dbusServiceName = "org.wayvibrance";
 static constexpr auto s_dbusObjectPath = "/Vibrance";
 static constexpr auto s_shaderPath = ":/effects/wayvibrance/shaders/wayvibrance.frag";
 static constexpr auto s_rulesGroupName = "WayVibranceAppRules";
+
+// Local-DoS guards (a session client must not be able to grow unbounded
+// state or compile cost inside the compositor).
+static constexpr int kMaxAppRules = 64;
+static constexpr int kMaxPatternLength = 128;
+static constexpr int kMaxNameLength = 64;
+
+// qBound happily forwards NaN (every comparison against it is false), so
+// finiteness is validated before clamping everywhere a factor enters.
+static QVector3D clampGains(qreal red, qreal green, qreal blue);
+
+static bool validFactor(qreal v, qreal &clampedOut)
+{
+    if (!std::isfinite(v)) {
+        return false;
+    }
+    clampedOut = qBound<qreal>(0.0, v, 2.0);
+    return true;
+}
 
 VibranceEffect::VibranceEffect()
 {
@@ -256,27 +276,37 @@ void VibranceEffect::reloadConfig()
     const qreal green = cfg.readEntry("GreenGain", 1.0);
     const qreal blue = cfg.readEntry("BlueGain", 1.0);
 
-    m_vibrance = qBound<qreal>(0.0, vibrance, 2.0);
+    m_vibrance = std::isfinite(vibrance) ? qBound<qreal>(0.0, vibrance, 2.0) : 1.0;
     m_enabled = enabled;
     m_primaryOnly = primaryOnly;
     m_primaryOutputName = primaryOutput;
-    m_rgbGains = QVector3D(static_cast<float>(qBound(0.0, red, 2.0)),
-                           static_cast<float>(qBound(0.0, green, 2.0)),
-                           static_cast<float>(qBound(0.0, blue, 2.0)));
+    m_rgbGains = clampGains(red, green, blue);
 
     m_rules.clear();
     const KConfigGroup rulesCfg = cfg.group(QString::fromLatin1(s_rulesGroupName));
     const QMap<QString, QString> entries = rulesCfg.entryMap();
     for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
+        if (m_rules.size() >= kMaxAppRules) {
+            qWarning() << "Way Vibrance: config profile list truncated at" << kMaxAppRules;
+            break;
+        }
         AppRule rule;
         if (!parseRule(QUrl::fromPercentEncoding(it.key().toLatin1()) + QLatin1Char('|') + it.value(),
                        rule)) {
             continue;
         }
-        rule.vibrance = qBound<qreal>(0.0, rule.vibrance, 2.0);
-        rule.gains = QVector3D(qBound(0.0f, rule.gains.x(), 2.0f),
-                               qBound(0.0f, rule.gains.y(), 2.0f),
-                               qBound(0.0f, rule.gains.z(), 2.0f));
+        qreal valid = 1.0;
+        if (!validFactor(rule.vibrance, valid)) {
+            continue; // garbage entry: drop rather than poison the frame
+        }
+        rule.vibrance = valid;
+        rule.gains = clampGains(rule.gains.x(), rule.gains.y(), rule.gains.z());
+        if (rule.pattern.size() > kMaxPatternLength) {
+            continue;
+        }
+        if (rule.displayName.size() > kMaxNameLength) {
+            rule.displayName = rule.displayName.left(kMaxNameLength);
+        }
         m_rules.append(rule);
     }
     rebuildMatchers();
@@ -323,7 +353,16 @@ static QRegularExpression globToMatcher(const QString &glob)
         if (i > literalStart) {
             regex += QRegularExpression::escape(glob.mid(literalStart, i - literalStart));
         }
-        regex += (c == QLatin1Char('*')) ? QStringLiteral(".*") : QStringLiteral(".");
+        if (c == QLatin1Char('*')) {
+            // Collapse runs of '*' (and '*' next to '?'): consecutive
+            // wildcards are the same set, and emitting several ".*" in a
+            // row would give the engine redundant backtracking paths.
+            if (!regex.endsWith(QLatin1String(".*"))) {
+                regex += QStringLiteral(".*");
+            }
+        } else if (!regex.endsWith(QLatin1Char('.'))) { // "?*" is covered by ".*"
+            regex += QLatin1Char('.');
+        }
         literalStart = i + 1;
     }
     if (literalStart < glob.size()) {
@@ -405,9 +444,12 @@ bool VibranceEffect::parseRule(const QString &serialized, AppRule &out)
 
 static QVector3D clampGains(qreal red, qreal green, qreal blue)
 {
-    return QVector3D(static_cast<float>(qBound(0.0, red, 2.0)),
-                     static_cast<float>(qBound(0.0, green, 2.0)),
-                     static_cast<float>(qBound(0.0, blue, 2.0)));
+    // Non-finite channels degrade to neutral (1.0) rather than poisoning
+    // the shader uniform.
+    auto channel = [](qreal v) {
+        return std::isfinite(v) ? static_cast<float>(qBound(0.0, v, 2.0)) : 1.0f;
+    };
+    return QVector3D(channel(red), channel(green), channel(blue));
 }
 
 void VibranceEffect::rebuildMatchers()
@@ -440,11 +482,28 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
         qWarning() << "Way Vibrance: ignoring invalid app profile" << prefixedPattern;
         return;
     }
-    vibrance = qBound<qreal>(0.0, vibrance, 2.0);
+    if (pattern.size() > kMaxPatternLength) {
+        qWarning() << "Way Vibrance: app profile pattern too long" << pattern.size();
+        return;
+    }
+    qreal validVibrance = 1.0;
+    if (!validFactor(vibrance, validVibrance)) {
+        qWarning() << "Way Vibrance: ignoring non-finite profile vibrance";
+        return;
+    }
+    vibrance = validVibrance;
+    if (gains.has_value()
+        && !(std::isfinite(gains->x()) && std::isfinite(gains->y()) && std::isfinite(gains->z()))) {
+        qWarning() << "Way Vibrance: ignoring non-finite profile gains";
+        return;
+    }
     QString cleanName;
     if (name.has_value()) {
         cleanName = name->trimmed();
         cleanName.remove(QLatin1Char('|'));
+        if (cleanName.size() > kMaxNameLength) {
+            cleanName = cleanName.left(kMaxNameLength);
+        }
     }
 
     bool matched = false;
@@ -468,6 +527,11 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
         }
     }
     if (!matched) {
+        if (m_rules.size() >= kMaxAppRules) {
+            qWarning() << "Way Vibrance: profile limit reached" << kMaxAppRules
+                       << "- remove one before adding another";
+            return;
+        }
         AppRule rule;
         rule.pattern = pattern;
         rule.titleMatch = titleMatch;
@@ -514,6 +578,9 @@ void VibranceEffect::setAppRuleName(const QString &prefixedPattern, const QStrin
     }
     QString cleanName = name.trimmed();
     cleanName.remove(QLatin1Char('|'));
+    if (cleanName.size() > kMaxNameLength) {
+        cleanName = cleanName.left(kMaxNameLength);
+    }
     for (AppRule &rule : m_rules) {
         if (rule.titleMatch == titleMatch && rule.pattern.compare(pattern, Qt::CaseInsensitive) == 0) {
             if (rule.displayName == cleanName) {
@@ -731,7 +798,11 @@ void VibranceEffect::updateRedirects()
     // guaranteed in-context place). Here we force a full frame so every
     // visible window gets the chance to reconcile, and drop all grabs when
     // the effect is disabled — inactive effects never see drawWindow().
-    if (!m_enabled) {
+    // If the new state leaves the effect inactive (disabled, or neutral
+    // globals with no profiles), KWin may stop calling drawWindow() —
+    // release any grabs now, before reconciliation that would happen in a
+    // paint that never comes.
+    if (!isActive()) {
         unredirectAllApplied();
     }
     effects->addRepaintFull();
@@ -739,7 +810,12 @@ void VibranceEffect::updateRedirects()
 
 void VibranceEffect::setVibrance(qreal value)
 {
-    value = qBound<qreal>(0.0, value, 2.0);
+    qreal valid = 1.0;
+    if (!validFactor(value, valid)) {
+        qWarning() << "Way Vibrance: ignoring non-finite vibrance";
+        return;
+    }
+    value = valid;
     if (qFuzzyCompare(value, m_vibrance)) {
         return;
     }
@@ -794,9 +870,7 @@ bool VibranceEffect::primaryOnly() const
 
 void VibranceEffect::setRGBGains(qreal red, qreal green, qreal blue)
 {
-    QVector3D gains(static_cast<float>(qBound(0.0, red, 2.0)),
-                   static_cast<float>(qBound(0.0, green, 2.0)),
-                   static_cast<float>(qBound(0.0, blue, 2.0)));
+    const QVector3D gains = clampGains(red, green, blue);
     if (qFuzzyCompare(gains, m_rgbGains)) {
         return;
     }
