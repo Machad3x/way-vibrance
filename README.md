@@ -120,6 +120,10 @@ output picking, and fully bilingual docs. The foundation from v0.4.0/v0.5.0
 
 ## Development
 
+The versioned matcher test (`tests/glob_match_test.cpp`, runs via
+`ctest --test-dir build -R glob_match` and in CI) fuzz-verifies the glob
+matcher against the frozen v0.6.1 reference and its step-budget ceilings.
+
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build --parallel

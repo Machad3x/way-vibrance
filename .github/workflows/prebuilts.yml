@@ -24,6 +24,26 @@ permissions:
   contents: write
 
 jobs:
+  matcher-tests:
+    # Cheap, versioned guarantee for the profile glob matcher: fuzz
+    # equivalence against the frozen regex reference + budget ceilings.
+    # Must pass before the packaging matrix is worth its artifacts.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt6 dev tooling
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends cmake qt6-base-dev
+      - name: Build and run matcher tests
+        # Standalone: the harness needs only Qt6::Core + the private header
+        # (a full cmake configure here would demand KWin packages).
+        run: |
+          g++ -O1 -std=c++17 -fPIC tests/glob_match_test.cpp -Ieffect \
+            $(pkg-config --cflags --libs Qt6Core) -o glob_match_test
+          ./glob_match_test
+
   packages:
     runs-on: ubuntu-latest
     timeout-minutes: 90

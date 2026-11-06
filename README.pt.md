@@ -122,6 +122,10 @@ permanece.
 
 ## Desenvolvimento
 
+O teste versionado do matcher (`tests/glob_match_test.cpp`, roda com
+`ctest --test-dir build -R glob_match` e no CI) verifica por fuzz o glob matcher
+contra a referência congelada da v0.6.1 e os tetos de orçamento de passos.
+
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build --parallel

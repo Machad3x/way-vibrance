@@ -4,6 +4,7 @@
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 
+#include "globmatch_p.h"
 #include "vibranceeffect.h"
 
 #include <window.h>
@@ -54,26 +55,12 @@ static constexpr auto s_rulesGroupName = "WayVibranceAppRules";
 // Local-DoS guards (a session client must not be able to grow unbounded
 // state or compile cost inside the compositor).
 static constexpr int kMaxAppRules = 64;
-static constexpr int kMaxPatternLength = 128;
 static constexpr int kMaxNameLength = 64;
 // Generous cap for output names (real ones are like "eDP-1"/"DP-4"): the
 // point is only to stop unbounded strings from reaching trim/compare/
-// persist paths. Prefixed patterns get kMaxPatternLength plus slack for
-// the app:/title: marker and surrounding whitespace.
-// Window-supplied identity strings are capped too: the paint path must
-// never be charged for megabyte compares/matches by a hostile client
-// renaming its window in a loop.
-static constexpr int kMaxWindowIdentityLength = 1024;
+// persist paths. (Pattern/identity caps and the glob step budgets live in
+// globmatch_p.h, shared verbatim with tests/glob_match_test.cpp.)
 static constexpr int kMaxOutputNameLength = 256;
-// Hard step budget for glob matching, sized strictly ABOVE the worst case
-// of the greedy matcher within the shipped caps: each loop iteration either
-// advances the text or rewinds to a star (which then advances the text),
-// so total steps are bounded by pattern.size() * text.size(); with the
-// 128/1024 caps that product plus slack is never reachable by legitimate
-// input. The budget therefore cannot alter matching behavior today — it
-// keeps the guarantee if any cap above is ever raised, so a hostile
-// pattern can never turn into unbounded work on the paint path.
-static constexpr int kGlobStepBudget = kMaxPatternLength * kMaxWindowIdentityLength + 4096;
 static constexpr int kMaxPrefixedPatternLength = kMaxPatternLength + 12;
 // Compiled GLShader variants cached for profile gains. Comfortably above
 // any legitimate working set (kMaxAppRules + the global set), yet bounded
@@ -374,56 +361,6 @@ bool VibranceEffect::rgbGainsActive() const
 // Per-app profiles
 // ---------------------------------------------------------------------------
 
-/**
- * Matches a user glob against a string, anchored and case-insensitive:
- * '*' spans any run, '?' consumes exactly one character, everything else
- * is literal.
- */
-static bool globMatch(const QString &glob, const QString &text)
-{
-    // Iterative wildcards matcher with a single rewind point: worst-case
-    // work is bounded by glob.size() * text.size() with a tiny constant and
-    // the explicit kGlobStepBudget ceiling. No regex engine, hence no
-    // backtracking blow-ups on the paint path. Semantics are the documented
-    // glob
-    // language — historically shipped as a translated, anchored,
-    // case-insensitive pattern and re-verified case-by-case identical:
-    // '*' spans any run, '?' consumes exactly one character (one UTF-16
-    // code unit), literals compare case-insensitively per Qt's char rule
-    // (equal after toLower or toUpper), and the whole string must match.
-    int g = 0;
-    int t = 0;
-    int starAt = -1;
-    int resumeAt = -1;
-    int steps = 0;
-    const auto sameCase = [](QChar a, QChar b) {
-        return a == b || a.toLower() == b.toLower() || a.toUpper() == b.toUpper();
-    };
-    while (t < text.size()) {
-        if (++steps > kGlobStepBudget) {
-            return false; // unreachable within shipped caps (see kGlobStepBudget)
-        }
-        if (g < glob.size() && glob.at(g) == QLatin1Char('?')) {
-            ++g;
-            ++t;
-        } else if (g < glob.size() && glob.at(g) != QLatin1Char('*') && sameCase(glob.at(g), text.at(t))) {
-            ++g;
-            ++t;
-        } else if (g < glob.size() && glob.at(g) == QLatin1Char('*')) {
-            starAt = g++; // consume the star; let the rewind below feed it chars
-            resumeAt = t;
-        } else if (starAt >= 0) {
-            g = starAt + 1;
-            t = ++resumeAt;
-        } else {
-            return false;
-        }
-    }
-    while (g < glob.size() && glob.at(g) == QLatin1Char('*')) {
-        ++g;
-    }
-    return g == glob.size();
-}
 
 QString VibranceEffect::serializedRule(const AppRule &rule)
 {
@@ -720,9 +657,10 @@ QString VibranceEffect::lastFocusedAppId() const
 void VibranceEffect::resolveWindow(EffectWindow *w)
 {
     WindowMatch &entry = m_windowMatch[w];
-    const QString rawClass = w->window() ? w->window()->resourceClass() : QString();
-    const QString rawName = w->window() ? w->window()->resourceName() : QString();
-    const QString rawCaption = w->caption();
+    static const QString s_noString;
+    const QString &rawClass = w->window() ? w->window()->resourceClass() : s_noString;
+    const QString &rawName = w->window() ? w->window()->resourceName() : s_noString;
+    const QString &rawCaption = w->caption();
     // Cap before anything touches these (compare/match/store): a window
     // claiming megabyte identities costs this path at most kMaxWindow-
     // IdentityLength per frame and is excluded from profile matching —
@@ -730,33 +668,47 @@ void VibranceEffect::resolveWindow(EffectWindow *w)
     const bool oversize = rawClass.size() > kMaxWindowIdentityLength
         || rawName.size() > kMaxWindowIdentityLength
         || rawCaption.size() > kMaxWindowIdentityLength;
-    const QString idClass = oversize ? rawClass.left(kMaxWindowIdentityLength) : rawClass;
-    const QString idName = oversize ? rawName.left(kMaxWindowIdentityLength) : rawName;
-    const QString caption = oversize ? rawCaption.left(kMaxWindowIdentityLength) : rawCaption;
-    if (entry.stamp == m_matchStamp && entry.oversize == oversize && entry.idA == idClass && entry.idB == idName && entry.caption == caption) {
+    if (oversize) {
+        // Oversized identities never match any profile (policy), so the
+        // only state that matters is the flag + stamp. A window that keeps
+        // re-publishing megabyte names hits this return instead of paying
+        // three 1 KB truncation copies and a memcmp per frame.
+        if (entry.oversize && entry.stamp == m_matchStamp) {
+            return;
+        }
+        entry.stamp = m_matchStamp;
+        entry.oversize = true;
+        entry.idA.clear();
+        entry.idB.clear();
+        entry.caption.clear();
+        entry.ruleIndex = -1;
+        return;
+    }
+    if (entry.stamp == m_matchStamp && !entry.oversize && entry.idA == rawClass && entry.idB == rawName && entry.caption == rawCaption) {
         return;
     }
     entry.stamp = m_matchStamp;
-    entry.oversize = oversize;
-    entry.idA = idClass;
-    entry.idB = idName;
-    entry.caption = caption;
+    entry.oversize = false;
+    entry.idA = rawClass;
+    entry.idB = rawName;
+    entry.caption = rawCaption;
     entry.ruleIndex = -1;
-    if (oversize || m_rules.isEmpty()) {
+    if (m_rules.isEmpty()) {
         return;
     }
+    int budget = kResolveStepBudget; // aggregate across every rule of this pass
     for (int i = 0; i < m_rules.size(); ++i) {
         const AppRule &rule = m_rules.at(i);
         if (rule.pattern.isEmpty()) {
             continue;
         }
         if (rule.titleMatch) {
-            if (globMatch(rule.pattern, caption)) {
+            if (globMatch(rule.pattern, rawCaption, &budget)) {
                 entry.ruleIndex = i;
                 break;
             }
-        } else if ((globMatch(rule.pattern, idClass) && !idClass.isEmpty())
-                   || (globMatch(rule.pattern, idName) && !idName.isEmpty())) {
+        } else if ((globMatch(rule.pattern, rawClass, &budget) && !rawClass.isEmpty())
+                   || (globMatch(rule.pattern, rawName, &budget) && !rawName.isEmpty())) {
             entry.ruleIndex = i;
             break;
         }

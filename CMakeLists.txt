@@ -25,4 +25,7 @@ find_package(KWin REQUIRED)
 add_subdirectory(effect)
 add_subdirectory(tray)
 
+enable_testing()
+add_subdirectory(tests)
+
 install(PROGRAMS cli/wayvibrance DESTINATION ${KDE_INSTALL_BINDIR})
