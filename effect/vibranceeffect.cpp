@@ -345,6 +345,7 @@ static QRegularExpression globToMatcher(const QString &glob)
     QString regex;
     regex.reserve(glob.size() + 8);
     int literalStart = 0;
+    QChar previousWildcard; // last wildcard emitted, to collapse '*'-runs only
     for (int i = 0; i < glob.size(); ++i) {
         const QChar c = glob.at(i);
         if (c != QLatin1Char('*') && c != QLatin1Char('?')) {
@@ -352,17 +353,21 @@ static QRegularExpression globToMatcher(const QString &glob)
         }
         if (i > literalStart) {
             regex += QRegularExpression::escape(glob.mid(literalStart, i - literalStart));
+            previousWildcard = QChar(); // literal text interrupts a wildcard run
         }
         if (c == QLatin1Char('*')) {
-            // Collapse runs of '*' (and '*' next to '?'): consecutive
-            // wildcards are the same set, and emitting several ".*" in a
-            // row would give the engine redundant backtracking paths.
-            if (!regex.endsWith(QLatin1String(".*"))) {
+            // Collapse only consecutive '*' ("**" means "*" in glob, so the
+            // language is unchanged) — several ".*" in a row would only add
+            // redundant backtracking paths for the engine.
+            if (previousWildcard != QLatin1Char('*')) {
                 regex += QStringLiteral(".*");
             }
-        } else if (!regex.endsWith(QLatin1Char('.'))) { // "?*" is covered by ".*"
+        } else {
+            // '?' always consumes exactly one character ("??" -> "..", and a
+            // '?' after a literal '.' stays a '?'); no collapsing here.
             regex += QLatin1Char('.');
         }
+        previousWildcard = c;
         literalStart = i + 1;
     }
     if (literalStart < glob.size()) {
