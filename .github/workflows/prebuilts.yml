@@ -36,6 +36,22 @@ jobs:
       - name: List artifacts
         run: ls -la dist/
 
+      - name: Clear existing assets first (idempotent re-attach)
+        # Overwrite via softprops matches assets by name, but GitHub
+        # sanitizes '~' to '.' in display names (Debian versions) — so any
+        # pre-existing upload (manual or CI) must be deleted first, else the
+        # step fails with "already_exists".
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REL="${{ github.event.inputs.version || github.ref_name }}"
+          for f in dist/*.rpm dist/*.deb dist/*.pkg.tar.zst; do
+            [ -e "$f" ] || continue
+            name="$(basename "$f")"
+            gh release delete-asset "$REL" "$name" --yes 2>/dev/null || true
+            gh release delete-asset "$REL" "${name//\~/.}" --yes 2>/dev/null || true
+          done
+
       - name: Attach artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
