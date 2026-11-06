@@ -108,8 +108,11 @@ packages/CI, OSD — see **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 ## Status
 
-Functional and in daily use; current release **v0.6.0** — multi-distro
-build support (Arch/Fedora/Debian/Ubuntu, never updating your system),
+Functional and in daily use; current release **v0.6.1** — a security
+hardening pass over the v0.6.0 feature set (no behaviour change): D-Bus input
+validation, tray sender trust, profile ceilings and a tamper-proof
+uninstaller. Multi-distro build support
+(Arch/Fedora/Debian/Ubuntu, never updating your system),
 per-release **prebuilt packages** built and install-verified in container
 matrices (attached to releases automatically by CI), real primary-monitor
 output picking, and fully bilingual docs. The foundation from v0.4.0/v0.5.0
