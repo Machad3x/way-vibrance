@@ -80,9 +80,10 @@ Installed a **package** instead? Use your package manager:
 
 ## Use
 
-- **Tray/window**: sliders for vibrance + RGB channels, presets
-  (50/100/125/150/200%), per-app profile editor, hotkey field, behaviour
-  checkboxes with monitor picker.
+- **Tray/window**: sliders for vibrance + RGB channels — each percentage has
+  a small circular **↺** button that restores just that slider to its default
+  (100%) — presets (50/100/125/150/200%), per-app profile editor, hotkey
+  field, behaviour checkboxes with monitor picker.
 - **CLI**: `wayvibrance --help` shows everything
   (`wayvibrance 1.5`, `toggle`, `rgb …`, `primary …`, `app list|set|del|name|reset|focused`).
 

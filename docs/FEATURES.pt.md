@@ -67,7 +67,10 @@ no segundo monitor mantêm o visual.
   amigáveis e selo `[+RGB …]`; *"De último
   foco…"* pré-preenche o app_id da última janela usada — dois cliques para
   cadastrar um jogo; duplo clique abre a janela de edição (sliders + presets
-  50/100/125/150/200% + Reset RGB); **Apply** comita ao vivo, **OK** fecha
+  50/100/125/150/200% + Reset RGB); cada porcentagem tem um pequeno botão
+  circular **↺** que restaura só aquele slider ao padrão (100%) — vibrância
+  global, cada canal RGB e cada slider do editor de perfis; **Apply** comita
+  ao vivo, **OK** fecha
   (confirmando pendências; perfil novo nunca aplicado é salvo em silêncio);
   o diálogo esconde o que o build do efeito em execução não suporta.
 - **Persistência**: `[Effect-wayvibrance][WayVibranceAppRules]` no `kwinrc`.

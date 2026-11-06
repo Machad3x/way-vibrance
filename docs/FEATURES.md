@@ -65,7 +65,10 @@ monitor's game keeps its look.
   and `[+RGB …]` badge; *From last
   focused…* pre-fills the app id of the last-used window (two clicks to
   enroll a game); double-click opens the editor window (sliders + presets
-  50/100/125/150/200% + Reset RGB); **Apply** commits live, **OK** closes
+  50/100/125/150/200% + Reset RGB); every slider percentage has a small
+  circular **↺** button that restores only that slider to its default (100%)
+  — global vibrance, each RGB channel and each slider in the profile editor;
+  **Apply** commits live, **OK** closes
   (confirming if something is unapplied; a never-applied new profile is
   saved silently on OK); the dialog hides features the running effect build
   cannot do.

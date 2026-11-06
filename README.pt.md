@@ -80,9 +80,10 @@ Instalou via **pacote**? Use o gerenciador da sua distro:
 
 ## Uso
 
-- **Bandeja/janela**: sliders de vibrância e canais RGB, presets
-  (50/100/125/150/200%), editor de perfis por app, campo de hotkey e
-  checkboxes de comportamento com seletor de monitor.
+- **Bandeja/janela**: sliders de vibrância e canais RGB — cada porcentagem
+  tem um pequeno botão circular **↺** que restaura só aquele slider ao padrão
+  (100%) — presets (50/100/125/150/200%), editor de perfis por app, campo de
+  hotkey e checkboxes de comportamento com seletor de monitor.
 - **CLI**: `wayvibrance --help` mostra tudo
   (`wayvibrance 1.5`, `toggle`, `rgb …`, `primary …`, `app list|set|del|name|reset|focused`).
 

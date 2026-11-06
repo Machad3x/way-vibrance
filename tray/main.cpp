@@ -8,6 +8,8 @@
 // vibrance-gui. Talks to the "wayvibrance" KWin effect over D-Bus for
 // flicker-free live adjustments.
 
+#include "resetbutton_p.h"
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -1134,6 +1136,7 @@ private:
         value->setText(QStringLiteral("100%"));
         row->addWidget(slider);
         row->addWidget(value);
+        row->addWidget(createResetButton(this, slider, 100));
         layout->addLayout(row);
         connect(slider, &QSlider::valueChanged, this, [this, value](int percent) {
             value->setText(QStringLiteral("%1%").arg(percent));
@@ -1202,6 +1205,7 @@ public:
         m_valueLabel->setMinimumWidth(48);
         row->addWidget(m_slider);
         row->addWidget(m_valueLabel);
+        row->addWidget(createResetButton(central, m_slider, 100));
         outerLayout->addLayout(row);
 
         m_enabledCheck = new QCheckBox(tr("Enabled"), central);
@@ -1237,6 +1241,7 @@ public:
             row->addWidget(name);
             row->addWidget(slider);
             row->addWidget(value);
+            row->addWidget(createResetButton(rgbGroup, slider, 100));
             rgbLayout->addLayout(row);
             this->*(ch.member) = slider;
             this->*(ch.label) = value;

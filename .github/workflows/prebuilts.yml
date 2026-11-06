@@ -24,10 +24,11 @@ permissions:
   contents: write
 
 jobs:
-  matcher-tests:
-    # Cheap, versioned guarantee for the profile glob matcher: fuzz
-    # equivalence against the frozen regex reference + budget ceilings.
-    # Must pass before the packaging matrix is worth its artifacts.
+  unit-tests:
+    # Cheap, versioned guarantees: the profile glob matcher (fuzz
+    # equivalence vs the frozen regex reference + budget ceilings) and the
+    # circular slider reset button (real widget, click semantics). Must pass
+    # before the packaging matrix is worth its artifacts.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -45,9 +46,16 @@ jobs:
           g++ -O1 -std=c++17 -fPIC tests/glob_match_test.cpp -Ieffect \
             $(pkg-config --cflags --libs Qt6Core) -o glob_match_test
           ./glob_match_test
+      - name: Build and run reset-button test
+        # Same shared header the tray and the profile dialog compile; the
+        # widget only needs Qt6Widgets and the offscreen platform plugin.
+        run: |
+          g++ -O1 -std=c++17 -fPIC tests/reset_button_test.cpp -Itray \
+            $(pkg-config --cflags --libs Qt6Widgets) -o reset_button_test
+          QT_QPA_PLATFORM=offscreen ./reset_button_test
 
   packages:
-    needs: matcher-tests   # a red matcher fuzz must gate the artifacts (jobs
+    needs: unit-tests      # red unit tests must gate the artifacts (jobs
                            # run in parallel without this)
     runs-on: ubuntu-latest
     timeout-minutes: 90
