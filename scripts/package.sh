@@ -191,8 +191,12 @@ pkg_arch() {
     local target=arch stage
     have_image archlinux:latest || { echo "  [SKIP] $target (image unavailable)"; return 0; }
     stage="$STAGE_ROOT/$target"; mkdir -p "$stage/way-vibrance"
-    sed "s/@VERSION@/$VERSION/g" packaging/PKGBUILD > "$stage/way-vibrance/PKGBUILD"
     tar czf "$stage/way-vibrance/way-vibrance-$VERSION.tar.gz" -C "$PRIST" "way-vibrance-$VERSION"
+    # Real integrity: hash the exact bytes makepkg will verify (the tar.gz
+    # is produced once here, so it is stable); makepkg aborts on mismatch.
+    SHA256_ARCH="$(sha256sum "$stage/way-vibrance/way-vibrance-$VERSION.tar.gz" | cut -d' ' -f1)"
+    sed "s/@VERSION@/$VERSION/g; s/@SHA256@/$SHA256_ARCH/g" packaging/PKGBUILD \
+        > "$stage/way-vibrance/PKGBUILD"
     echo "  [build ] $target"
     "$TOOL" run --rm -v "$stage:/work:rw" -e MAKEFLAGS="-j$JBERS" \
         docker.io/library/archlinux:latest bash -c "

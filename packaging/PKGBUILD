@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Arch PKGBUILD — pkgver is injected from CMakeLists.txt by
 # scripts/package.sh (or kept current by the AUR git workflow).
+# @SHA256@ is replaced with the real checksum of the source tarball by
+# scripts/package.sh; the literal placeholder only survives if the
+# template is used verbatim outside that flow — never ship a published
+# build without the real hash.
 pkgname=way-vibrance
 pkgver=@VERSION@
 pkgrel=1
@@ -12,7 +16,7 @@ license=('GPL2')
 depends=('kwin' 'qt6-base' 'kconfig' 'kcoreaddons' 'kdbusaddons' 'kglobalaccel')
 makedepends=('cmake' 'extra-cmake-modules' 'vulkan-headers')
 source=("$pkgname-$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('@SHA256@')
 
 build() {
     cd "$srcdir/way-vibrance-$pkgver"

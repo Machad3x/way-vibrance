@@ -60,7 +60,17 @@ static constexpr int kMaxNameLength = 64;
 // any legitimate working set (kMaxAppRules + the global set), yet bounded
 // so endless gain-editing churn cannot grow the pool (or the GPU memory
 // and shader-compiler work behind it) without limit.
-static constexpr int kMaxShaderVariants = 72;
+static constexpr int kMaxShaderVariants = 72; // > kMaxAppRules + 1 by design:
+// a variant only needs to exist while some window applies its gains, so this
+// ceiling exceeds the largest legitimate working set — the substitution and
+// refuse branches below are defense-in-depth, unreachable via the API.
+// A saturated pool may substitute the nearest cached variant only if no
+// channel moves by more than this (2% of the 0-2 gain range). Beyond it
+// we refuse the substitution outright and drop the offscreen pass for
+// that window (profile saturation still applies) — silently shifting a
+// user's colors by more than 2% would be a feature regression wearing
+// security clothing.
+static constexpr float kShaderNearestMaxDelta = 0.02f;
 
 // qBound happily forwards NaN (every comparison against it is false), so
 // finiteness is validated before clamping everywhere a factor enters.
@@ -795,22 +805,31 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
             }
         }
     }
-    // Every slot is on screen (legitimate heavy use): reuse the nearest
-    // cached variant instead of compiling forever. Channel distance is in
-    // 0-2 gain units, so the visual difference stays well under 1%.
+    // Every slot is on screen (legitimate heavy use): substitute the
+    // nearest cached variant only within the imperceptible threshold;
+    // otherwise degrade explicitly (the caller unredirects and the window
+    // keeps only the vibrance uniform) instead of silently recoloring it.
     if (m_shaderPool.size() >= kMaxShaderVariants) {
         GLShader *nearest = nullptr;
         float best = std::numeric_limits<float>::max();
         for (const ShaderVariant &variant : m_shaderPool) {
-            const float d = (variant.gains - gains).lengthSquared();
-            if (d < best) {
-                best = d;
+            const QVector3D d = variant.gains - gains;
+            const float m = std::max({std::abs(d.x()), std::abs(d.y()), std::abs(d.z())});
+            if (m < best) {
+                best = m;
                 nearest = variant.shader.get();
             }
         }
-        if (nearest) {
+        if (nearest && best <= kShaderNearestMaxDelta) {
             return nearest;
         }
+        if (!m_poolSaturatedWarned) {
+            m_poolSaturatedWarned = true;
+            qWarning().noquote() << "Way Vibrance: shader cache saturated (" << kMaxShaderVariants
+                                 << "distinct gain sets on screen) — profiles needing farther gains fall back"
+                                 << "to the vibrance-only path until some variant can be recycled";
+        }
+        return nullptr;
     }
 
     auto fresh = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
@@ -824,6 +843,7 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
     }
     GLShader *raw = fresh.get();
     m_shaderPool.insert(key, ShaderVariant{std::move(fresh), gains});
+    m_poolSaturatedWarned = false; // room exists again: a later saturation gets one fresh notice
     return raw;
 }
 

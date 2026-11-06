@@ -79,11 +79,15 @@ no segundo monitor mantêm o visual.
   logo sem custo de backtracking a considerar), com comportamento verificado
   como idêntico à tradução para regex anterior.
   As combinações de ganho por perfil têm cache de shaders limitado a 72
-  variantes compiladas: ganhos exatos compilam sob demanda e, com o cache
-  cheio, variantes que nenhuma janela usa são recicladas primeiro —
-  recorrendo à variante mais próxima (<1% de diferença visual) se todas
-  estiverem em tela — então editar ganhos sem fim não faz a memória da GPU
-  nem o trabalho do compilador crescerem.
+  variantes compiladas — teto deliberadamente acima do maior conjunto de
+  trabalho legítimo (64 perfis + o global): o pool guarda estilos vivos e
+  sobras de edição, recicladas assim que ele enche; editar ganhos sem fim
+  não faz a memória da GPU nem o trabalho do compilador crescerem.
+  Substituir por uma variante cacheada só é permitido até 2% por canal, e
+  conjuntos mais distantes são recusados explicitamente (a janela mantém a
+  vibrância do perfil e apenas dispensa o passe extra) — ramo de defesa em
+  profundidade, já que o teto de perfis torna 72 variantes concorrentes
+  inalcançáveis pela API.
 
 ## Hotkey & configurações de comportamento
 

@@ -261,6 +261,7 @@ private:
         QVector3D gains; // kept for the bounded-cache nearest-variant path
     };
     QHash<QString, ShaderVariant> m_shaderPool; // per-gain-set shaders (capped)
+    bool m_poolSaturatedWarned = false; // rate-limits the saturation warning
     bool m_shaderFailed = false;
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;

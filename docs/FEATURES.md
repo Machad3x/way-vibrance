@@ -77,11 +77,15 @@ monitor's game keeps its look.
   dedicated linear-time glob matcher (no regex engine, so no backtracking
   cost to reason about) with behavior verified identical to the previous
   regex translation.
-  Per-profile gain combinations are shader-cached in a bounded pool (72
-  compiled variants): exact gains compile on demand, and once full the
-  cache first recycles variants no window is using — falling back to the
-  nearest cached variant (<1% visual difference) if all are on screen —
-  so endless gain-editing cannot grow GPU memory or compiler work.
+  Per-profile gain combinations are shader-cached in a bounded pool of 72
+  compiled variants — a ceiling deliberately above the largest legitimate
+  working set (64 profiles + the global one), so the pool holds live styles
+  plus editing leftovers and recycles the leftovers the moment it fills;
+  endless gain-editing cannot grow GPU memory or compiler work. Substituting
+  a cached variant is allowed only within 2% per channel, and farther sets
+  are refused outright (the window keeps its profile's vibrance and simply
+  skips the extra pass) — a branch that is defense-in-depth only, since the
+  profile cap makes 72 concurrent variants unreachable through the API.
 
 ## Hotkey & behaviour settings
 
