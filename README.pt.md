@@ -88,9 +88,13 @@ prebuilt/CI, OSD — veja **[docs/ROADMAP.pt.md](docs/ROADMAP.pt.md)**.
 
 ## Estado
 
-Funcional e em uso diário; release atual **v0.5.0** (seletor do monitor
-primário). Perfis por aplicação vieram na v0.4.0; suporte multi-distro,
-empacotamento e a reorganização da doc estão na fila da próxima release.
+Funcional e em uso diário; release atual **v0.6.0** — suporte multi-distro
+de build (Arch/Fedora/Debian/Ubuntu, sem nunca atualizar o sistema),
+**pacotes prebuilt** por release compilados e verificados por instalação em
+matrizes de contêineres (anexados às releases automaticamente pela CI),
+seleção real da saída do monitor primário e documentação totalmente
+bilíngue. A base da v0.4.0/v0.5.0 (perfis por app, seletor de monitor)
+permanece.
 
 ## Desenvolvimento
 

@@ -87,9 +87,12 @@ packages/CI, OSD — see **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 ## Status
 
-Functional and in daily use; current release **v0.5.0** (primary-monitor
-picker). Per-app profiles shipped in v0.4.0; multi-distro build support,
-packaging and docs restructure are queued for the next release.
+Functional and in daily use; current release **v0.6.0** — multi-distro
+build support (Arch/Fedora/Debian/Ubuntu, never updating your system),
+per-release **prebuilt packages** built and install-verified in container
+matrices (attached to releases automatically by CI), real primary-monitor
+output picking, and fully bilingual docs. The foundation from v0.4.0/v0.5.0
+(per-app profiles, monitor picker) is unchanged.
 
 ## Development
 
