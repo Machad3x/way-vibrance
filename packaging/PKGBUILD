@@ -15,11 +15,13 @@ source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
+    cd "$srcdir/way-vibrance-$pkgver"
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr -DKDE_INSTALL_USE_QT_SYS_PATHS=ON
     cmake --build build
 }
 
 package() {
+    cd "$srcdir/way-vibrance-$pkgver"
     DESTDIR="$pkgdir" cmake --install build
 }

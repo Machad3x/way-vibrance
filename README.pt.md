@@ -24,7 +24,7 @@ visualmente equivalente à vibrância de driver.
 - Hotkey global configurável, seletor de monitor para "só o monitor primário"
 - CLI, estado persistente (`kwinrc`) e pegada **só em espaço do usuário: sem
   rede, sem daemon, sem telemetria**
-- Guia completo, API D-Bus e todos os detalhes: **[docs/FEATURES.md](docs/FEATURES.md)** (em inglês)
+- Guia completo, API D-Bus e todos os detalhes: **[docs/FEATURES.pt.md](docs/FEATURES.pt.md)**
 
 ## Requisitos
 
@@ -34,10 +34,19 @@ visualmente equivalente à vibrância de driver.
 
 ## Instalação
 
-**Pacotes prebuilt** (da próxima release em diante): baixe o artefato da sua
-distro na [última release](https://github.com/Machad3x/way-vibrance/releases)
-— `.rpm` (Fedora; no Silverblue/Kinoite: `rpm-ostree install ./way-vibrance-*.rpm`),
-`.deb` (Debian 13+/Ubuntu 24.10+/Neon), `.pkg.tar.zst` (Arch).
+**Pacotes prebuilt**: baixe o artefato da sua distro **e release exatos** na
+[última release](https://github.com/Machad3x/way-vibrance/releases) — o
+efeito é compilado contra o KWin daquele release (a API de efeitos não tem
+promessa binária entre versões):
+
+- RPM `.fc44/.fc45` — Fedora; no Atomic (Silverblue/Kinoite):
+  `rpm-ostree install ./way-vibrance-*.rpm`
+- `.deb` — Debian 13/14-testing (`~debian13`/`~debian14`) e Ubuntu
+  26.04/26.10 (`~ubuntuXX.YY`); instale com `sudo apt install ./…deb`
+- `.pkg.tar.zst` — Arch & derivadas (`sudo pacman -U …`)
+Pacotes são fornecidos **apenas para releases ainda suportadas upstream**
+  (ex.: Ubuntu 25.04/25.10 saíram da matriz ao chegarem ao EOL).
+- Para regenerar tudo localmente: `scripts/package.sh` (matriz podman)
 
 **Ou compile (qualquer distro suportada):**
 
@@ -65,17 +74,17 @@ plugin não podem ser trocados a quente). Ative em *Configurações do Sistema
 
 - O cursor do mouse não é afetado (hardware plane) e ganhos RGB ≠ 100% usam
   o caminho offscreen (um pouco mais pesado, mas ainda barato). A lista
-  completa de [limitações](docs/FEATURES.md#known-limitations) e os
-  [detalhes de compatibilidade de versão](docs/FEATURES.md#version-compatibility)
+  completa de [limitações](docs/FEATURES.pt.md#limitações-conhecidas) e os
+  [detalhes de compatibilidade de versão](docs/FEATURES.pt.md#compatibilidade-de-versão)
   estão na documentação.
 - Tudo roda em espaço do usuário: sem daemons, sem rede, sem telemetria;
   escreve apenas em `~/.config/{kwinrc,wayvibrancerc}` —
-  [privacidade & pegada](docs/FEATURES.md#privacy--footprint).
+  [privacidade & pegada](docs/FEATURES.pt.md#privacidade--pegada).
 
 ## Roadmap
 
 Vibrância "de verdade", valores por saída, HDR, backend Vulkan, pacotes
-prebuilt/CI, OSD — veja **[docs/ROADMAP.md](docs/ROADMAP.md)** (em inglês).
+prebuilt/CI, OSD — veja **[docs/ROADMAP.pt.md](docs/ROADMAP.pt.md)**.
 
 ## Estado
 
@@ -93,10 +102,11 @@ scripts/dev.sh {load|unload|toggle|status}   # hot-load na sessão
 scripts/package.sh [fedora|debian|ubuntu|arch]  # prebuilts → dist/
 ```
 
-Docs: [features & referência](docs/FEATURES.md) ·
-[roadmap](docs/ROADMAP.md) ·
-[RESEARCH.md](docs/RESEARCH.md) (as descobertas da API do KWin por trás de
-cada decisão de projeto).
+Docs (todas bilíngues — EN é o padrão, PT no seletor de cada página):
+[recursos & referência](docs/FEATURES.pt.md) ·
+[roadmap](docs/ROADMAP.pt.md) ·
+[RESEARCH.pt.md](docs/RESEARCH.pt.md) (as descobertas da API do KWin por
+trás de cada decisão de projeto).
 
 ## Assistência de IA
 

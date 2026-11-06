@@ -34,10 +34,19 @@ equivalent to driver vibrance.
 
 ## Install
 
-**Prebuilt packages** (next release onwards): grab the artifact for your
-distro from the [latest release](https://github.com/Machad3x/way-vibrance/releases)
-— `.rpm` (Fedora; on Silverblue/Kinoite: `rpm-ostree install ./way-vibrance-*.rpm`),
-`.deb` (Debian 13+/Ubuntu 24.10+/Neon), `.pkg.tar.zst` (Arch).
+**Prebuilt packages**: grab the artifact for your exact distro release from
+the [latest release](https://github.com/Machad3x/way-vibrance/releases) —
+the effect is compiled against that release's KWin (the effects API has no
+cross-version binary promise):
+
+- `.fc44/.fc45` RPM — Fedora; on Atomic (Silverblue/Kinoite):
+  `rpm-ostree install ./way-vibrance-*.rpm`
+- `.deb` — Debian 13/14-testing (`~debian13`/`~debian14`) and Ubuntu
+  26.04/26.10 (`~ubuntuXX.YY`); install with `sudo apt install ./…deb`
+- `.pkg.tar.zst` — Arch & derivatives (`sudo pacman -U …`)
+- Packages are provided **only for releases still supported upstream**
+  (e.g. Ubuntu 25.04/25.10 were dropped at EOL).
+- Regenerate everything locally with `scripts/package.sh` (podman matrix)
 
 **Or build (any supported distro):**
 
@@ -92,10 +101,11 @@ scripts/dev.sh {load|unload|toggle|status}   # hot-load into the session
 scripts/package.sh [fedora|debian|ubuntu|arch]  # prebuilts → dist/
 ```
 
-Docs: [features & reference](docs/FEATURES.md) ·
+Docs (all bilingual — EN default, PT via the switch on each page):
+[features & reference](docs/FEATURES.md) ·
 [roadmap](docs/ROADMAP.md) ·
-[RESEARCH.md](docs/RESEARCH.md) (Portuguese — the KWin API findings behind
-every design decision).
+[RESEARCH.md](docs/RESEARCH.md) (the KWin API findings behind every design
+decision).
 
 ## AI assistance
 
