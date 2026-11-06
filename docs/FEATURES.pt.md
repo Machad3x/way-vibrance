@@ -72,7 +72,10 @@ no segundo monitor mantêm o visual.
   global, cada canal RGB e cada slider do editor de perfis; **Apply** comita
   ao vivo, **OK** fecha
   (confirmando pendências; perfil novo nunca aplicado é salvo em silêncio);
-  o diálogo esconde o que o build do efeito em execução não suporta.
+  o diálogo esconde o que o build do efeito em execução não suporta. A janela
+  usa cartões derivados do tema (cores vêm do `QPalette` ativo, então temas
+  claro/escuro e trocas ao vivo são acompanhados) e o painel de perfis mostra
+  um estado vazio curto até existir a primeira regra.
 - **Persistência**: `[Effect-wayvibrance][WayVibranceAppRules]` no `kwinrc`.
 - **Limites** (contenção de DoS local): no máximo 64 perfis, padrão com até
   128 caracteres, nome de exibição com até 64; efeito, diálogo do tray e

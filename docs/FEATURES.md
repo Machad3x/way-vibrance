@@ -71,7 +71,10 @@ monitor's game keeps its look.
   **Apply** commits live, **OK** closes
   (confirming if something is unapplied; a never-applied new profile is
   saved silently on OK); the dialog hides features the running effect build
-  cannot do.
+  cannot do. The window is drawn as theme-derived cards (colours come from
+  the active `QPalette`, so light/dark schemes and live scheme switches are
+  followed) and the profiles pane shows a short empty state until the first
+  rule exists.
 - **Persistence**: `[Effect-wayvibrance][WayVibranceAppRules]` in `kwinrc`.
 - **Limits** (local-DoS containment): at most 64 profiles, pattern up to
   128 characters, display name up to 64; the effect, the tray dialog and the

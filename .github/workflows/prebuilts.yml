@@ -26,9 +26,10 @@ permissions:
 jobs:
   unit-tests:
     # Cheap, versioned guarantees: the profile glob matcher (fuzz
-    # equivalence vs the frozen regex reference + budget ceilings) and the
-    # circular slider reset button (real widget, click semantics). Must pass
-    # before the packaging matrix is worth its artifacts.
+    # equivalence vs the frozen regex reference + budget ceilings), the
+    # circular slider reset button (real widget, click semantics) and the
+    # palette-derived stylesheet (theme awareness, contrast, no external
+    # resources). Must pass before the packaging matrix is worth its artifacts.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -53,6 +54,14 @@ jobs:
           g++ -O1 -std=c++17 -fPIC tests/reset_button_test.cpp -Itray \
             $(pkg-config --cflags --libs Qt6Widgets) -o reset_button_test
           QT_QPA_PLATFORM=offscreen ./reset_button_test
+      - name: Build and run theme-style test
+        # The application sheet is generated from the live QPalette; this
+        # guards light/dark awareness, WCAG AA contrast on cards and the
+        # "colours only, no url()/image()" rule. Qt6Gui only.
+        run: |
+          g++ -O1 -std=c++17 -fPIC tests/theme_style_test.cpp -Itray \
+            $(pkg-config --cflags --libs Qt6Gui) -o theme_style_test
+          ./theme_style_test
 
   packages:
     needs: unit-tests      # red unit tests must gate the artifacts (jobs

@@ -16,3 +16,10 @@ target_include_directories(reset_button_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
 add_test(NAME reset_button_test COMMAND reset_button_test)
 set_tests_properties(reset_button_test PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Versioned guarantee for the palette-derived application stylesheet: theme
+# awareness, contrast, no external resource loading.
+add_executable(theme_style_test theme_style_test.cpp)
+target_link_libraries(theme_style_test PRIVATE Qt6::Gui)
+target_include_directories(theme_style_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
+add_test(NAME theme_style_test COMMAND theme_style_test)

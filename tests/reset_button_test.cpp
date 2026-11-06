@@ -15,12 +15,15 @@
       3. a default outside the slider range clamps to the nearest edge
          instead of being ignored;
       4. the visual contract (18x18, circular glyph, tooltip naming the
-         value, accessible name) is intact.
+         value, accessible name) is intact, and the button is styled by the
+         shared application sheet rather than an inline stylesheet, so a KDE
+         colour-scheme switch re-polishes it together with every widget.
 
     Runs offscreen, no session bus needed. Exit code != 0 on failure.
 */
 
 #include "resetbutton_p.h"
+#include "style_p.h"
 
 #include <QApplication>
 #include <QSlider>
@@ -44,6 +47,7 @@ int main(int argc, char **argv)
 {
     qputenv("QT_QPA_PLATFORM", "offscreen"); // headless: CI has no display
     QApplication app(argc, argv);
+    app.setStyleSheet(wvstyle::buildAppStyle(app.palette()));
 
     // ---- 1. clicking restores the default, exactly one signal ----
     {
@@ -65,7 +69,9 @@ int main(int argc, char **argv)
         check(!reset->accessibleName().isEmpty(), "accessible name present");
         check(reset->text() == QStringLiteral("\u21BA"), "circular reset glyph");
         check(reset->size() == QSize(18, 18), "fixed 18x18 (circle) size");
-        check(reset->styleSheet().contains(QStringLiteral("border-radius: 9px")),
+        check(reset->property("wvReset").toBool(), "marked for the application sheet");
+        check(reset->styleSheet().isEmpty(), "no inline stylesheet (single theme source)");
+        check(app.styleSheet().contains(QStringLiteral("border-radius: 9px")),
               "border radius = half the size (circle)");
 
         reset->click();

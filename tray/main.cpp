@@ -9,6 +9,7 @@
 // flicker-free live adjustments.
 
 #include "resetbutton_p.h"
+#include "style_p.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -22,9 +23,12 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QEvent>
 #include <QFile>
+#include <QFont>
 #include <QGroupBox>
 #include <QAction>
+#include <QIcon>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
@@ -37,7 +41,9 @@
 #include <QAbstractButton>
 #include <QSlider>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QStandardPaths>
+#include <QStyle>
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -957,6 +963,8 @@ public:
     {
         setWindowTitle(tr("Per-app profile"));
         auto *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(16, 16, 16, 16);
+        layout->setSpacing(10);
 
         auto *matchRow = new QHBoxLayout();
         m_kind = new QComboBox(this);
@@ -999,6 +1007,7 @@ public:
         if (fullApi) {
             m_gainsBox = new QGroupBox(tr("Channel gains (these windows only)"), this);
             auto *gainsLayout = new QVBoxLayout(m_gainsBox);
+            gainsLayout->setSpacing(6);
             makeSliderRow(gainsLayout, QStringLiteral("R"), QStringLiteral("#e05555"), kRgbMinPercent, m_redSlider, m_redValue);
             makeSliderRow(gainsLayout, QStringLiteral("G"), QStringLiteral("#55c25a"), kRgbMinPercent, m_greenSlider, m_greenValue);
             makeSliderRow(gainsLayout, QStringLiteral("B"), QStringLiteral("#5b8def"), kRgbMinPercent, m_blueSlider, m_blueValue);
@@ -1029,7 +1038,7 @@ public:
         });
         connect(m_pattern, &QLineEdit::textChanged, this, [this] { validate(); markDirty(); });
 
-        resize(420, fullApi ? 340 : 220);
+        resize(460, fullApi ? 380 : 260);
         updateButtons();
     }
 
@@ -1187,11 +1196,15 @@ public:
         // editor on the right — a distinct "section" of the app that hides
         // (and lets the window collapse back) when unsupported.
         auto *columns = new QHBoxLayout(central);
+        columns->setContentsMargins(16, 16, 16, 16);
+        columns->setSpacing(18);
         auto *outerLayout = new QVBoxLayout();
+        outerLayout->setSpacing(10);
         columns->addLayout(outerLayout, 5);
         m_sidePane = new QWidget(central);
         auto *sideLayout = new QVBoxLayout(m_sidePane);
         sideLayout->setContentsMargins(0, 0, 0, 0);
+        sideLayout->setSpacing(12);
         columns->addWidget(m_sidePane, 4);
 
         m_statusLabel = new QLabel(central);
@@ -1203,6 +1216,10 @@ public:
         m_slider->setValue(100);
         m_valueLabel = new QLabel(central);
         m_valueLabel->setMinimumWidth(48);
+        // The slider starts at 100 but does not emit valueChanged for its
+        // initial value; without this the row shows an empty gap until the
+        // first state push (and forever when the effect is unavailable).
+        m_valueLabel->setText(QStringLiteral("100%"));
         row->addWidget(m_slider);
         row->addWidget(m_valueLabel);
         row->addWidget(createResetButton(central, m_slider, 100));
@@ -1216,6 +1233,7 @@ public:
         // values map to gain multipliers (100% = neutral 1.0).
         auto *rgbGroup = new QGroupBox(tr("Channel gains (RGB)"), central);
         auto *rgbLayout = new QVBoxLayout(rgbGroup);
+        rgbLayout->setSpacing(6);
         struct ChannelSpec
         {
             const char *name;
@@ -1280,12 +1298,48 @@ public:
         // window, mirroring the global controls.
         m_profileGroup = new QGroupBox(tr("Per-app profiles"), m_sidePane);
         auto *profileLayout = new QVBoxLayout(m_profileGroup);
-        m_profileList = new QListWidget(m_profileGroup);
+        profileLayout->setSpacing(8);
+
+        // Empty state: without a rule the pane used to be a large blank box.
+        // A stacked page explains what the pane is for and gives way to the
+        // list as soon as the first profile arrives.
+        m_profileStack = new QStackedWidget(m_profileGroup);
+        auto *emptyPage = new QWidget(m_profileStack);
+        auto *emptyLayout = new QVBoxLayout(emptyPage);
+        emptyLayout->setContentsMargins(16, 16, 16, 16);
+        emptyLayout->addStretch(1);
+        auto *emptyIcon = new QLabel(emptyPage);
+        QIcon folderIcon = QIcon::fromTheme(QStringLiteral("folder-open"));
+        if (folderIcon.isNull()) {
+            folderIcon = style()->standardIcon(QStyle::SP_DirOpenIcon);
+        }
+        emptyIcon->setPixmap(folderIcon.pixmap(48, 48));
+        emptyIcon->setAlignment(Qt::AlignCenter);
+        emptyLayout->addWidget(emptyIcon);
+        auto *emptyTitle = new QLabel(tr("No profiles yet"), emptyPage);
+        QFont emptyTitleFont = emptyTitle->font();
+        emptyTitleFont.setBold(true);
+        emptyTitle->setFont(emptyTitleFont);
+        emptyTitle->setAlignment(Qt::AlignCenter);
+        emptyLayout->addWidget(emptyTitle);
+        auto *emptyHint = new QLabel(
+            tr("Add an application below to give it its own vibrance and RGB gains."), emptyPage);
+        emptyHint->setProperty("wvHint", true);
+        emptyHint->setAlignment(Qt::AlignCenter);
+        emptyHint->setWordWrap(true);
+        emptyHint->setMaximumWidth(260);
+        emptyLayout->addWidget(emptyHint);
+        emptyLayout->addStretch(1);
+
+        m_profileList = new QListWidget(m_profileStack);
         m_profileList->setMinimumWidth(280);
         m_profileList->setToolTip(tr("Double-click a profile to edit it.\n"
                                      "'app:' patterns match the Wayland app_id / X11 WM_CLASS,\n"
                                      "'title:' patterns match the window caption; '*' and '?' are wildcards."));
-        profileLayout->addWidget(m_profileList, 1);
+        m_profileStack->addWidget(emptyPage);
+        m_profileStack->addWidget(m_profileList);
+        profileLayout->addWidget(m_profileStack, 1);
+        updateProfileEmptyState();
 
         auto *profileButtons = new QHBoxLayout();
         auto *addFocusedButton = new QPushButton(tr("From last focused…"), m_profileGroup);
@@ -1390,6 +1444,7 @@ public:
         // daemon, editable here and in System Settings → Shortcuts).
         auto *hotkeyGroup = new QGroupBox(tr("Global hotkey"), central);
         auto *hotkeyLayout = new QVBoxLayout(hotkeyGroup);
+        hotkeyLayout->setSpacing(8);
         auto *hotkeyRow = new QHBoxLayout();
         m_shortcutEdit = new QKeySequenceEdit(hotkeyGroup);
         m_shortcutEdit->setKeySequence(controller->toggleShortcut());
@@ -1462,6 +1517,7 @@ public:
         // Behaviour settings — one check per option, like Enabled.
         auto *behaviourGroup = new QGroupBox(tr("Behaviour"), central);
         auto *behaviourLayout = new QVBoxLayout(behaviourGroup);
+        behaviourLayout->setSpacing(6);
         m_startHiddenCheck = new QCheckBox(tr("Open directly to the tray on startup"), behaviourGroup);
         m_startHiddenCheck->setChecked(storedStartHidden());
         m_autostartCheck = new QCheckBox(tr("Start with Plasma (autostart)"), behaviourGroup);
@@ -1532,7 +1588,7 @@ public:
         });
 
         setCentralWidget(central);
-        resize(780, 620);
+        resize(800, 640);
 
         connect(m_slider, &QSlider::valueChanged, this, [controller, this](int percent) {
             updateValueLabel(percent);
@@ -1579,7 +1635,29 @@ public:
         controller->refreshState();
     }
 
+protected:
+    bool event(QEvent *event) override
+    {
+        // Plasma can switch the colour scheme at runtime (day/night). Rebuild
+        // the single application sheet instead of leaving cards, borders and
+        // reset buttons with the palette they were created with.
+        if (event->type() == QEvent::ApplicationPaletteChange && !m_applyingStyle) {
+            m_applyingStyle = true;
+            qApp->setStyleSheet(wvstyle::buildAppStyle(qApp->palette()));
+            m_applyingStyle = false;
+        }
+        return QMainWindow::event(event);
+    }
+
 private:
+    void updateProfileEmptyState()
+    {
+        if (!m_profileStack) {
+            return;
+        }
+        m_profileStack->setCurrentIndex(m_profileList->count() == 0 ? 0 : 1);
+    }
+
     void setPercent(int percent)
     {
         percent = qBound(kMinPercent, percent, kMaxPercent);
@@ -1648,6 +1726,7 @@ private:
             m_profileList->setCurrentRow(previousRow);
         }
         m_rebuildingProfiles = false;
+        updateProfileEmptyState();
     }
 
     QString currentProfilePattern() const
@@ -1670,6 +1749,7 @@ private:
     QSlider *m_blueSlider = nullptr;
     QGroupBox *m_profileGroup = nullptr;
     QWidget *m_sidePane = nullptr;
+    QStackedWidget *m_profileStack = nullptr;
     QListWidget *m_profileList = nullptr;
     QStringList m_profileEntries;
     bool m_rebuildingProfiles = false;
@@ -1703,6 +1783,7 @@ private:
     bool m_updatingFromEffect = false;
     bool m_updatingRGB = false;
     bool m_updatingShortcut = false;
+    bool m_applyingStyle = false;
 };
 
 static QString autostartFilePath()
@@ -1791,6 +1872,10 @@ int main(int argc, char *argv[])
     QApplication::setOrganizationName(QStringLiteral("wayvibrance"));
     QApplication::setApplicationDisplayName(QStringLiteral("Way Vibrance"));
     QApplication::setQuitOnLastWindowClosed(false);
+
+    // One palette-derived sheet for the tray window and the profile dialog.
+    // Applied before any widget exists so the first polish is already themed.
+    qApp->setStyleSheet(wvstyle::buildAppStyle(qApp->palette()));
 
     KAboutData about(QStringLiteral("org.kde.wayvibrance-tray"),
                      QStringLiteral("Way Vibrance"),

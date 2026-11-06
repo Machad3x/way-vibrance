@@ -11,9 +11,7 @@
 
 #pragma once
 
-#include <QColor>
 #include <QObject>
-#include <QPalette>
 #include <QSlider>
 #include <QStringLiteral>
 #include <QToolButton>
@@ -29,6 +27,11 @@
  * normal QSlider::valueChanged path, which is what updates the percentage
  * label, marks the profile dialog dirty and pushes the change to the
  * effect — the button therefore needs no wiring of its own beyond this.
+ *
+ * Styling comes from the application sheet (tray/style_p.h) through the
+ * "wvReset" property, not from an inline setStyleSheet(): that way a KDE
+ * colour-scheme change re-polishes the button together with every other
+ * widget instead of freezing the palette it was created with.
  */
 inline QToolButton *createResetButton(QWidget *parent, QSlider *slider, int defaultValue = 100)
 {
@@ -41,21 +44,8 @@ inline QToolButton *createResetButton(QWidget *parent, QSlider *slider, int defa
     button->setCursor(Qt::PointingHandCursor);
     // Fixed 18px + 9px radius = a circle (the icon stays centered).
     button->setFixedSize(18, 18);
-
-    const QPalette pal = parent->palette();
-    button->setStyleSheet(QStringLiteral(
-        "QToolButton {"
-        " border: 1px solid %1;"
-        " border-radius: 9px;"
-        " padding: 0px;"
-        " font-size: 11px;"
-        " color: %2;"
-        " }"
-        "QToolButton:hover { background: %3; }"
-        "QToolButton:pressed { background: %1; }")
-        .arg(pal.color(QPalette::Mid).name(),
-             pal.color(QPalette::ButtonText).name(),
-             pal.color(QPalette::Midlight).name()));
+    // Selector for the application stylesheet; set before the first polish.
+    button->setProperty("wvReset", true);
 
     QObject::connect(button, &QToolButton::clicked, slider, [slider, defaultValue] {
         slider->setValue(qBound(slider->minimum(), defaultValue, slider->maximum()));
