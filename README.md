@@ -108,10 +108,13 @@ packages/CI, OSD — see **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 ## Status
 
-Functional and in daily use; current release **v0.6.1** — a security
-hardening pass over the v0.6.0 feature set (no behaviour change): D-Bus input
-validation, tray sender trust, profile ceilings and a tamper-proof
-uninstaller. Multi-distro build support
+Functional and in daily use; current release **v0.6.2** — the completed
+hardening line (static-audit rounds 2–10, no behaviour change): D-Bus trust
+anchored to the compositor PID and revalidated on owner changes, string
+ceilings at every entry point including window identities, a fully async
+non-freezable tray, budgeted glob matching with a versioned fuzz test in CI,
+a bounded shader cache, and a tamper/symlink-proof uninstaller. Multi-distro
+build support
 (Arch/Fedora/Debian/Ubuntu, never updating your system),
 per-release **prebuilt packages** built and install-verified in container
 matrices (attached to releases automatically by CI), real primary-monitor

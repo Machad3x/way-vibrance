@@ -108,10 +108,13 @@ prebuilt/CI, OSD — veja **[docs/ROADMAP.pt.md](docs/ROADMAP.pt.md)**.
 
 ## Estado
 
-Funcional e em uso diário; release atual **v0.6.1** — uma passada de
-hardening de segurança sobre os recursos da v0.6.0 (nenhuma mudança de
-comportamento): validação de entrada D-Bus, confiança de emissor no tray,
-tetos de perfis e desinstalador à prova de manifesto adulterado. Suporte
+Funcional e em uso diário; release atual **v0.6.2** — a linha de hardening concluída (rodadas 2–10 da
+auditoria estática, nenhuma mudança de comportamento): confiança D-Bus
+ancorada no PID do compositor e revalidada a cada troca de dono, tetos de
+string em todos os pontos de entrada incluindo as identidades de janela, um
+tray totalmente assíncrono e à prova de congelamento, matching de glob
+orçado com teste fuzz versionado no CI e desinstalador à prova de manifesto
+adulterado e de symlinks. Suporte
 multi-distro de build (Arch/Fedora/Debian/Ubuntu, sem nunca atualizar o
 sistema),
 **pacotes prebuilt** por release compilados e verificados por instalação em
