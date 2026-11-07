@@ -79,7 +79,6 @@ static constexpr int kRgbMaxPercent = 200;
 
 // Same ceilings the effect enforces on D-Bus input — the tray mirrors them
 // so a hostile emitter cannot inflate the UI list or the parsed fields.
-static constexpr int kMaxProfiles = 64;
 static constexpr int kRefreshTimeoutMs = 3000;
 
 /** Finite + within the effect's accepted range; the UI speaks percents. */
@@ -97,13 +96,13 @@ static bool saneFactor(const QVariant &v, double &out)
 static QStringList sanitizeRuleList(const QStringList &in)
 {
     QStringList rules = in;
-    if (rules.size() > kMaxProfiles) {
-        rules = rules.mid(0, kMaxProfiles);
+    if (rules.size() > kMaxAppRules) {
+        rules = rules.mid(0, kMaxAppRules);
     }
     rules.removeIf([](const QString &e) {
         const int sep = e.indexOf(QLatin1Char('|'));
-        const int patternLen = sep < 0 ? e.size() : sep; // +6 covers app:/title:
-        return e.isEmpty() || patternLen > kMaxPatternLength + 6 || e.size() > 512;
+        const int patternLen = sep < 0 ? e.size() : sep;
+        return e.isEmpty() || patternLen > kMaxPrefixedPatternLength || e.size() > 512;
     });
     return rules;
 }
