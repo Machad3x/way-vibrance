@@ -112,6 +112,12 @@ VibranceEffect::VibranceEffect()
         // attached to the object, so the adaptor must be created *before*
         // registerObject(). It is parented here: when KWin unloads the effect
         // the adaptor dies with it and the next instance can re-register.
+        //
+        // Trust boundary: this is a per-user session-bus interface with no
+        // token. Any process under the same UID can call it, which is why
+        // every setter bounds/validates its input and none of them grants
+        // anything beyond this user's colour settings. The tray protects
+        // itself separately by trusting only the compositor-owned name.
         new WayVibranceAdaptor(this);
         m_dbusRegistered = bus.registerObject(QString::fromLatin1(s_dbusObjectPath),
                                               this,

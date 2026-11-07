@@ -36,6 +36,10 @@ and run. Back to [README](../README.md) · [Roadmap](ROADMAP.md).
     `rgbGain` uniforms uploaded there — events from D-Bus/config only mark
     state dirty and request a repaint. Each distinct gain set gets its own
     `GLShader` instance; only windows that actually use gains are redirected.
+  - **Shader failure is bounded**: if the gains shader cannot be compiled,
+    it is retried at most 3 times (1 s apart) and then disabled for that
+    effect load — one warning is logged, vibrance keeps working, and the
+    retry path never runs per frame or floods the journal.
 - **`tray/`** — `wayvibrance-tray`: Qt 6 tray app (throttled live sliders,
   presets, per-app profile editor, global hotkey, autostart, behaviour
   settings, monitor picker).
@@ -247,6 +251,11 @@ Everything runs in **userspace**:
   the same finite/range/list validation — so a peer that grabs the name
   first (or swaps owners afterwards) cannot spoof the UI or feed it
   hostile values;
+- the effect's `org.wayvibrance` methods are session-local and carry no
+  token: any process under the same user can call them. Every method
+  validates and clamps its input, and the interface grants nothing beyond
+  changing this user's colour settings (the same user can already edit
+  `kwinrc`); other users have no access to a per-user session bus;
 - writes only to `~/.config/kwinrc` (effect state, managed by KWin itself),
   `~/.config/wayvibrancerc` (hotkey/behaviour) and the optional autostart
   `.desktop`;

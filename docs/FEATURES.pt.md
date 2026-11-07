@@ -38,6 +38,11 @@ compilar e usar. Voltar ao [README](../README.pt.md) ·
     estado como pendente e pedem repaint. Cada conjunto distinto de ganhos
     ganha sua instância de `GLShader`; só janelas que realmente usam ganhos
     são redirecionadas.
+  - **Falha de shader é limitada**: se o shader de ganhos não compilar, são
+    feitas no máximo 3 tentativas (1 s de intervalo) e então ele fica
+    desabilitado naquela carga do efeito — um único aviso é registrado, a
+    vibrância continua funcionando e o caminho de retry nunca roda por frame
+    nem inunda o journal.
 - **`tray/`** — `wayvibrance-tray`: app de bandeja Qt 6 (sliders ao vivo com
   throttle, presets, editor de perfis por app, hotkey global, autostart,
   comportamento, seletor de monitor).
@@ -251,6 +256,11 @@ Tudo roda em **espaço de usuário**:
   method replies passam pela mesma validação de finitude/intervalo/tamanho
   — um processo que roube o nome primeiro (ou troque de dono depois) não
   consegue falsificar a UI nem alimentar valores hostis;
+- os métodos `org.wayvibrance` do efeito são locais à sessão e não usam
+  token: qualquer processo do mesmo usuário pode chamá-los. Todos validam e
+  limitam a entrada, e a interface não concede nada além de mudar as cores
+  desse usuário (que já poderia editar o `kwinrc`); outros usuários não têm
+  acesso ao bus de sessão por usuário;
 - escreve só em `~/.config/kwinrc` (estado do efeito, gerido pelo próprio
   KWin), `~/.config/wayvibrancerc` (hotkey/comportamento) e o `.desktop` de
   autostart opcional;
