@@ -866,6 +866,10 @@ private:
         m_lastFocusedPending = false;
         m_lastFocusedCb = nullptr;
         setProfilesSupported(false);
+        // Capability is per effect build, not per tray: a reattach may land
+        // on an older effect, and a stale "full" flag would make us send
+        // setAppRuleFull to an interface that only knows setAppRule.
+        m_profilesFull = false;
         Q_EMIT availableChanged(false);
     }
 
