@@ -108,7 +108,19 @@ XDG_RUNTIME_DIR=/tmp/xdg "$DBUSRUN" -- env QT_QPA_PLATFORM=offscreen timeout 3 w
 TRAY=$!
 sleep 3.5
 if kill -0 $TRAY 2>/dev/null; then kill -9 $TRAY; echo "tray-alive-ok";
-else wait $TRAY && { echo "FAIL: tray exited cleanly too early"; exit 1; }; fi
+else
+    # The probe runs the tray under `timeout 3`, so the healthy outcome here
+    # is status 124 (the timeout fired after the tray stayed up). A clean
+    # early exit (0) or any crash status must fail the verification; the old
+    # `wait && { FAIL; }` form only caught the former and let crashes pass.
+    status=0
+    wait $TRAY || status=$?
+    if [ "$status" -ne 124 ]; then
+        echo "FAIL: tray exited before the 3s probe completed (status $status)"
+        exit 1
+    fi
+    echo "tray-timeout-ok"
+fi
 echo "VERIFY-OK"
 VEOF
 }
