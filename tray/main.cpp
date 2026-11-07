@@ -476,6 +476,9 @@ public:
         }
         m_lastFocusedPending = true;
         m_lastFocusedCb = std::move(cb);
+        // Replies already in flight from an earlier attachment (or an earlier
+        // click after a detach) must not consume this click's callback.
+        const quint64 seq = ++m_lastFocusedSeq;
         QDBusMessage msg = QDBusMessage::createMethodCall(
             m_serviceOwner,
             QString::fromLatin1(s_vibrancePath),
@@ -484,14 +487,18 @@ public:
         QDBusPendingCall call = QDBusConnection::sessionBus().asyncCall(msg, kRefreshTimeoutMs);
         auto *watcher = new QDBusPendingCallWatcher(call, this);
         connect(watcher, &QDBusPendingCallWatcher::finished, this,
-                [this](QDBusPendingCallWatcher *w) {
-                    QString id = w->isError() ? QString() : w->reply().arguments().value(0).toString();
+                [this, seq](QDBusPendingCallWatcher *w) {
+                    const QString id = w->isError()
+                        ? QString()
+                        : w->reply().arguments().value(0).toString().left(1024);
                     w->deleteLater();
+                    if (seq != m_lastFocusedSeq) {
+                        return; // detached or superseded meanwhile
+                    }
                     m_lastFocusedPending = false;
-                    id = id.left(1024); // bounded even if the effect were older/hostile
                     auto cb = std::exchange(m_lastFocusedCb, nullptr);
                     if (cb) {
-                        cb(id);
+                        cb(id); // bounded even if the effect were older/hostile
                     }
                 });
     }
@@ -853,6 +860,7 @@ private:
                        this,
                        SLOT(onSignal(QDBusMessage)));
         ++m_refreshSeq; // drop any in-flight refresh replies with the old owner
+        ++m_lastFocusedSeq; // and any last-focused reply from the old owner
         m_attached = false;
         m_lastSent = -1.0;
         m_lastFocusedPending = false;
@@ -878,6 +886,7 @@ private:
     bool m_attached = false; // talking to a verified effect connection
     QString m_serviceOwner; // unique bus name of the org.wayvibrance owner
     quint64 m_refreshSeq = 0;
+    quint64 m_lastFocusedSeq = 0;
     bool m_lastFocusedPending = false;
     std::function<void(const QString &)> m_lastFocusedCb; // invalidates in-flight refreshes on detach/new round
     double m_gainsAccum[3] = {1.0, 1.0, 1.0};
