@@ -625,6 +625,13 @@ private Q_SLOTS:
 
     void onVibranceChanged(double value)
     {
+        // Keep the send-dedupe cache aligned with the effect's authoritative
+        // value. Without this, after a CLI/remote change, dragging the slider
+        // back to the last value we sent would be treated as a no-op and the
+        // UI/effect would stay out of sync. A queued local send wins instead.
+        if (m_pendingPercent < 0) {
+            m_lastSent = value;
+        }
         Q_EMIT vibranceFromEffect(value);
     }
 
