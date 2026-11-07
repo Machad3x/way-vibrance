@@ -323,23 +323,37 @@ void VibranceEffect::reloadConfig()
             qWarning() << "Way Vibrance: config profile list truncated at" << kMaxAppRules;
             break;
         }
+        // Validate key length and characters
         const QString decodedKey = QUrl::fromPercentEncoding(it.key().toLatin1());
         if (decodedKey.isEmpty() || decodedKey.size() > kMaxPrefixedPatternLength || decodedKey.contains(QLatin1Char('|'))) {
+            qWarning() << "Way Vibrance: invalid rule key" << it.key();
+            continue;
+        }
+        // Validate value length
+        if (it.value().size() > 512) {
+            qWarning() << "Way Vibrance: rule value too long" << it.value();
             continue;
         }
         AppRule rule;
         if (!parseRule(decodedKey + QLatin1Char('|') + it.value(), rule)) {
+            qWarning() << "Way Vibrance: failed to parse rule" << decodedKey << it.value();
             continue;
         }
+        // Validate vibrance range
         qreal valid = 1.0;
         if (!validFactor(rule.vibrance, valid)) {
-            continue; // garbage entry: drop rather than poison the frame
-        }
-        rule.vibrance = valid;
-        rule.gains = clampGains(rule.gains.x(), rule.gains.y(), rule.gains.z());
-        if (rule.pattern.size() > kMaxPatternLength || rule.pattern.contains(QLatin1Char('|'))) {
+            qWarning() << "Way Vibrance: invalid vibrance value in rule" << decodedKey;
             continue;
         }
+        rule.vibrance = valid;
+        // Validate gains range
+        rule.gains = clampGains(rule.gains.x(), rule.gains.y(), rule.gains.z());
+        // Validate pattern length and characters
+        if (rule.pattern.size() > kMaxPatternLength || rule.pattern.contains(QLatin1Char('|'))) {
+            qWarning() << "Way Vibrance: invalid pattern in rule" << decodedKey;
+            continue;
+        }
+        // Validate displayName length
         if (rule.displayName.size() > kMaxNameLength) {
             rule.displayName = rule.displayName.left(kMaxNameLength);
         }
