@@ -8,8 +8,6 @@
 #include "vibranceeffect.h"
 #include "common_limits.h"
 #include <QDBusConnection>
-#include <QDBusMessage>
-#include <QDBusInterface>
 
 #include <window.h>
 
@@ -347,8 +345,10 @@ void VibranceEffect::reloadConfig()
         rule.vibrance = valid;
         // Validate gains range
         rule.gains = clampGains(rule.gains.x(), rule.gains.y(), rule.gains.z());
-        // Validate pattern length and characters
-        if (rule.pattern.size() > kMaxPatternLength || rule.pattern.contains(QLatin1Char('|'))) {
+        // Validate pattern length. parseRule() already rejected embedded
+        // separators by constructing fields from a '|' split, so no pipe
+        // check is needed here.
+        if (rule.pattern.size() > kMaxPatternLength) {
             qWarning() << "Way Vibrance: invalid pattern in rule" << decodedKey;
             continue;
         }
