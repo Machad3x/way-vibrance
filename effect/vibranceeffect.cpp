@@ -57,21 +57,13 @@ static constexpr auto s_shaderPath = ":/effects/wayvibrance/shaders/wayvibrance.
 static constexpr auto s_rulesGroupName = "WayVibranceAppRules";
 
 // Local-DoS guards (a session client must not be able to grow unbounded
-// state or compile cost inside the compositor).
-static constexpr int kMaxAppRules = 64;
-static constexpr int kMaxNameLength = 64;
-// Generous cap for output names (real ones are like "eDP-1"/"DP-4"): the
-// point is only to stop unbounded strings from reaching trim/compare/
-// persist paths. (Pattern/identity caps and the glob step budgets live in
-// globmatch_p.h, shared verbatim with tests/glob_match_test.cpp.)
-static constexpr int kMaxOutputNameLength = 256;
-static constexpr int kMaxPrefixedPatternLength = kMaxPatternLength + 12;
-static constexpr int kMaxPrefixedPatternLength = kMaxPatternLength + 12;
+// state or compile cost inside the compositor) now live in common_limits.h
+// (at the repo root, shared with tray/ and tests/).
 // Compiled GLShader variants cached for profile gains. Comfortably above
 // any legitimate working set (kMaxAppRules + the global set), yet bounded
 // so endless gain-editing churn cannot grow the pool (or the GPU memory
 // and shader-compiler work behind it) without limit.
-static constexpr int kMaxShaderVariants = 72; // > kMaxAppRules + 1 by design:
+// (kMaxShaderVariants also comes from common_limits.h) // > kMaxAppRules + 1 by design:
 // a variant only needs to exist while some window applies its gains, so this
 // ceiling exceeds the largest legitimate working set — the substitution and
 // refuse branches below are defense-in-depth, unreachable via the API.
@@ -81,7 +73,7 @@ static constexpr int kMaxShaderVariants = 72; // > kMaxAppRules + 1 by design:
 // that window (profile saturation still applies) — silently shifting a
 // user's colors by more than 2% would be a feature regression wearing
 // security clothing.
-static constexpr float kShaderNearestMaxDelta = 0.02f;
+// (kShaderNearestMaxDelta also comes from common_limits.h)
 
 // qBound happily forwards NaN (every comparison against it is false), so
 // finiteness is validated before clamping everywhere a factor enters.
@@ -403,7 +395,7 @@ QString VibranceEffect::serializedRule(const AppRule &rule)
     }
     if (!rule.displayName.isEmpty()) {
         QString escaped = rule.displayName;
-        escaped.replace(QLatin1Char('|'), QStringLiteral("\|"));
+        escaped.replace(QLatin1Char('|'), QStringLiteral("\\|"));
         out += QLatin1Char('|') + escaped;
     }
     return out;
@@ -442,7 +434,7 @@ bool VibranceEffect::parseRule(const QString &serialized, AppRule &out)
     }
     if (fields.size() == 4) {
         QString name = fields.at(3);
-        name.replace(QStringLiteral("\\|"), QLatin1Char('|'));
+        name.replace(QStringLiteral("\\|"), QStringLiteral("|"));
         out.displayName = name;
     }
     QString head = fields.at(0);

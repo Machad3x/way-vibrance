@@ -14,30 +14,31 @@
 #include <QLatin1Char>
 #include <QString>
 
-// Input ceilings enforced at every D-Bus/config entry point (see
-// docs/FEATURES.md "Per-app profiles — Limits").
-constexpr int kMaxPatternLength = 128;
-constexpr int kMaxWindowIdentityLength = 1024;
+#include "common_limits.h"
 
-// Hard step budget for a single globMatch() call, sized strictly ABOVE the
-// worst case of the greedy matcher within the caps above: each iteration
+// Input ceilings enforced at every D-Bus/config entry point (see
+// docs/FEATURES.md "Per-app profiles — Limits") now come from
+// common_limits.h (repo root, shared with effect/tray/tests).
+
+// Hard step budget for a single globMatch() call (kGlobStepBudget, from
+// common_limits.h) is sized strictly ABOVE the
+// worst case of the greedy matcher within the caps in common_limits.h:
+// each iteration
 // either advances the text or rewinds to a star (which then advances the
 // text), so total steps are bounded by pattern.size() * text.size(); the
 // product plus slack is therefore unreachable by legitimate input and the
 // budget cannot alter matching behavior today. It becomes an enforced
 // ceiling the moment any cap above is raised, so a hostile pattern can
 // never turn into unbounded work on the paint path.
-constexpr int kGlobStepBudget = kMaxPatternLength * kMaxWindowIdentityLength + 4096;
 
-// Aggregate budget for one resolveWindow() pass (up to 64 rules, app rules
-// scanning two identities = <=128 matcher walks). Realistic rule sets
+// Aggregate budget for one resolveWindow() pass (kResolveStepBudget,
+// kMaxResolveWalks from common_limits.h): up to 64 rules, app rules
+// scanning two identities = <=128 matcher walks. Realistic rule sets
 // consume a few thousand steps end-to-end, far below this; adversarial
 // all-worst-case sets are cut short once it is spent — every later walk
 // refuses after a single step (the loop's first check), so a pass costs
 // at most kResolveStepBudget + walks total (~1ms worst case), and only on
 // identity CHANGE, never per frame (stamp fast path runs first).
-constexpr int kMaxResolveWalks = 64 * 2; // keep in sync with kMaxAppRules (effect)
-constexpr int kResolveStepBudget = 1'000'000;
 
 /**
  * Matches a user glob against a string, anchored and case-insensitive:
