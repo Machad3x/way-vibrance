@@ -213,10 +213,12 @@ public:
                     // existing state first, then let attachInterface()
                     // re-resolve and re-verify the new owner (compositor-PID
                     // check included) before any signal reaches the UI.
+                    // Delay re-attach by 100ms to tolerate KWin restarts and
+                    // avoid accepting a transient owner during service handover.
                     detachInterface();
                     m_serviceOwner = newOwner;
                     if (!newOwner.isEmpty()) {
-                        attachInterface();
+                        QTimer::singleShot(100, this, [this] { attachInterface(); });
                     }
                 });
 
