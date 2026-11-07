@@ -72,7 +72,7 @@ fi
 #    project's filename allowlist. A missing or failed manifest simply
 #    contributes no candidates; the canonical set alone is still fully
 #    validated. Pure bash: no python needed at uninstall time.
-REALPREFIX="$(realpath -m -- "$PREFIX" 2>/dev/null || printf '%s' "$PREFIX")"
+REALPREFIX="$(realpath -P -- "$PREFIX" 2>/dev/null || printf '%s' "$PREFIX")"
 
 validate_candidate() {
     local raw="$1" cand rel base

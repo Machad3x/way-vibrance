@@ -62,6 +62,7 @@ static constexpr int kMaxNameLength = 64;
 // globmatch_p.h, shared verbatim with tests/glob_match_test.cpp.)
 static constexpr int kMaxOutputNameLength = 256;
 static constexpr int kMaxPrefixedPatternLength = kMaxPatternLength + 12;
+static constexpr int kMaxPrefixedPatternLength = kMaxPatternLength + 12;
 // Compiled GLShader variants cached for profile gains. Comfortably above
 // any legitimate working set (kMaxAppRules + the global set), yet bounded
 // so endless gain-editing churn cannot grow the pool (or the GPU memory
@@ -305,7 +306,9 @@ void VibranceEffect::reloadConfig()
     m_vibrance = std::isfinite(vibrance) ? qBound<qreal>(0.0, vibrance, 2.0) : 1.0;
     m_enabled = enabled;
     m_primaryOnly = primaryOnly;
-    m_primaryOutputName = primaryOutput;
+    m_primaryOutputName = primaryOutput.size() > kMaxOutputNameLength
+        ? primaryOutput.left(kMaxOutputNameLength)
+        : primaryOutput;
     m_rgbGains = clampGains(red, green, blue);
 
     m_rules.clear();
@@ -316,9 +319,12 @@ void VibranceEffect::reloadConfig()
             qWarning() << "Way Vibrance: config profile list truncated at" << kMaxAppRules;
             break;
         }
+        const QString decodedKey = QUrl::fromPercentEncoding(it.key().toLatin1());
+        if (decodedKey.isEmpty() || decodedKey.size() > kMaxPrefixedPatternLength || decodedKey.contains(QLatin1Char('|'))) {
+            continue;
+        }
         AppRule rule;
-        if (!parseRule(QUrl::fromPercentEncoding(it.key().toLatin1()) + QLatin1Char('|') + it.value(),
-                       rule)) {
+        if (!parseRule(decodedKey + QLatin1Char('|') + it.value(), rule)) {
             continue;
         }
         qreal valid = 1.0;
@@ -327,7 +333,7 @@ void VibranceEffect::reloadConfig()
         }
         rule.vibrance = valid;
         rule.gains = clampGains(rule.gains.x(), rule.gains.y(), rule.gains.z());
-        if (rule.pattern.size() > kMaxPatternLength) {
+        if (rule.pattern.size() > kMaxPatternLength || rule.pattern.contains(QLatin1Char('|'))) {
             continue;
         }
         if (rule.displayName.size() > kMaxNameLength) {
