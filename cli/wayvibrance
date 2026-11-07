@@ -63,6 +63,11 @@ call() {
     "$QDBUS" "$IFACE" /Vibrance "$IFACE.$1" "${@:2}"
 }
 
+die_usage() {
+    echo "usage: $*  (see: wayvibrance --help)" >&2
+    exit 1
+}
+
 # KWin 6.8 hosts /Effects under the org.kde.KWin service; some setups also
 # expose it as a dedicated org.kde.kwin.Effects service. Probe both.
 EFFECTS_SVC=""
@@ -88,38 +93,55 @@ ensure_loaded() {
 cmd="${1:-get}"
 case "$cmd" in
     get)
+        [ $# -eq 1 ] || die_usage "wayvibrance get"
         ensure_loaded
         call vibrance
         ;;
     load)
+        [ $# -eq 1 ] || die_usage "wayvibrance load"
         ensure_loaded
         ;;
     on)
+        [ $# -eq 1 ] || die_usage "wayvibrance on"
         ensure_loaded
         call setEnabled true
         ;;
     off)
+        [ $# -eq 1 ] || die_usage "wayvibrance off"
         ensure_loaded
         call setEnabled false
         ;;
     toggle)
+        [ $# -eq 1 ] || die_usage "wayvibrance toggle"
         ensure_loaded
         call toggleEnabled
         ;;
     primary)
         ensure_loaded
         case "${2:-get}" in
-            on)  call setPrimaryOnly true ;;
-            off) call setPrimaryOnly false ;;
-            get) call primaryOnly ;;
-            outputs) call screenList ;;
+            on)
+                [ $# -eq 2 ] || die_usage "wayvibrance primary on"
+                call setPrimaryOnly true ;;
+            off)
+                [ $# -eq 2 ] || die_usage "wayvibrance primary off"
+                call setPrimaryOnly false ;;
+            get)
+                [ $# -eq 2 ] || die_usage "wayvibrance primary get"
+                call primaryOnly ;;
+            outputs)
+                [ $# -eq 2 ] || die_usage "wayvibrance primary outputs"
+                call screenList ;;
             output)
                 # 'wayvibrance primary output DP-1' picks the output;
-                # 'primary output ""' goes back to automatic (first output)
+                # 'primary output ""' goes back to automatic (first output).
+                # Two args keep the historical "automatic" form working.
+                [ $# -le 3 ] || die_usage "wayvibrance primary output <name>"
                 call setPrimaryOutputName "${3:-}"
                 ;;
-            output-get) call primaryOutputName ;;
-            *)   echo "usage: wayvibrance primary {on|off|get|outputs|output <name>|output-get}  (see: wayvibrance --help)" >&2; exit 1 ;;
+            output-get)
+                [ $# -eq 2 ] || die_usage "wayvibrance primary output-get"
+                call primaryOutputName ;;
+            *)   die_usage "wayvibrance primary {on|off|get|outputs|output <name>|output-get}" ;;
         esac
         ;;
     rgb)
@@ -134,6 +156,7 @@ case "$cmd" in
         fi
         ;;
     getrgb)
+        [ $# -eq 1 ] || die_usage "wayvibrance getrgb"
         ensure_loaded
         printf 'R=%s G=%s B=%s\n' "$(call redGain)" "$(call greenGain)" "$(call blueGain)"
         ;;
@@ -141,6 +164,7 @@ case "$cmd" in
         ensure_loaded
         case "${2:-list}" in
             list)
+                [ $# -eq 2 ] || die_usage "wayvibrance app list"
                 # each line arrives as "kind:pattern|vib[|r,g,b[|name]]" — just indent it
                 call appRules | sed -e 's/^/  /' | tr -d '\r' || true
                 ;;
@@ -175,9 +199,11 @@ case "$cmd" in
                 fi
                 ;;
             reset)
+                [ $# -eq 2 ] || die_usage "wayvibrance app reset"
                 call clearAppRules
                 ;;
             focused)
+                [ $# -eq 2 ] || die_usage "wayvibrance app focused"
                 call lastFocusedAppId
                 ;;
             *)
