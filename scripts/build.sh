@@ -245,7 +245,7 @@ fi
 
 echo "==> Configuring…"
 if [ -f "$BUILD_DIR/CMakeCache.txt" ] &&
-   ! grep -q "^CMAKE_HOME_DIRECTORY:INTERNAL=$PWD$" "$BUILD_DIR/CMakeCache.txt"; then
+   ! grep -qxF "CMAKE_HOME_DIRECTORY:INTERNAL=$PWD" "$BUILD_DIR/CMakeCache.txt"; then
     echo "==> $BUILD_DIR/CMakeCache.txt was generated from a different path (e.g. a container mount)." >&2
     echo "    Use BUILD_DIR=/tmp/wayvibrance-build (or remove the stale $BUILD_DIR/) and re-run." >&2
     exit 1
