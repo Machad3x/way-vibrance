@@ -926,9 +926,16 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
         return nullptr;
     }
 
+    if (m_variantRetryTimer.isValid() && m_variantRetryTimer.elapsed() < kShaderRetryDelayMs) {
+        // A variant compile just failed: do not retry from every frame.
+        return nullptr;
+    }
     auto fresh = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
                                                                    QLatin1String(s_shaderPath));
     if (!fresh) {
+        m_variantRetryTimer.start();
+        qWarning() << "Way Vibrance: failed to compile a per-profile gain shader;"
+                   << "windows needing it fall back to the vibrance-only path";
         return nullptr;
     }
     {
