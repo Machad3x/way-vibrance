@@ -808,6 +808,10 @@ private:
                     this,
                     SLOT(onSignal(QDBusMessage)));
 
+        // Apply anything the user changed while the effect was away, then
+        // refresh so the UI reconciles with whatever the compositor reports.
+        flush();
+        flushRGB();
         refreshState();
         Q_EMIT availableChanged(true);
     }
@@ -828,6 +832,8 @@ private:
         delete m_interface;
         m_interface = nullptr;
         m_lastSent = -1.0;
+        m_lastFocusedPending = false;
+        m_lastFocusedCb = nullptr;
         setProfilesSupported(false);
         Q_EMIT availableChanged(false);
     }
@@ -1493,8 +1499,14 @@ public:
             dialog.exec();
         });
         connect(addFocusedButton, &QPushButton::clicked, this, [controller, this, pushDialog] {
-            controller->requestLastFocusedAppId([controller, this, pushDialog](const QString &id) {
-            ProfileDialog dialog(controller->profilesFullApi(), this);
+            // The controller may deliver the reply after this window is gone;
+            // QPointer makes the late callback a no-op instead of a UAF.
+            QPointer<TrayWindow> self(this);
+            controller->requestLastFocusedAppId([controller, self, pushDialog](const QString &id) {
+            if (!self) {
+                return;
+            }
+            ProfileDialog dialog(controller->profilesFullApi(), self.data());
             if (!id.isEmpty()) {
                 dialog.setFields(false, id, 125);
             }
