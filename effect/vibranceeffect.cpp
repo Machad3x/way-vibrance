@@ -762,12 +762,18 @@ bool VibranceEffect::ensureShader()
         return true;
     }
     if (m_shaderFailed) {
-        return false;
+        m_shaderFailedAttempts++;
+        if (m_shaderFailedAttempts > 3) {
+            qWarning() << "Way Vibrance: shader generation failed after 3 attempts";
+            return false;
+        }
+        m_shaderFailed = false; // Reset for retry
     }
     m_shader = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
                                                                  QLatin1String(s_shaderPath));
     if (!m_shader) {
         m_shaderFailed = true;
+        m_shaderFailedAttempts++;
         qWarning() << "Way Vibrance: failed to load the RGB gain shader" << QLatin1String(s_shaderPath)
                    << "- per-channel gains will be ignored in this session.";
         return false;

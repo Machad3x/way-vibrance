@@ -265,6 +265,7 @@ private:
     QHash<QString, ShaderVariant> m_shaderPool; // per-gain-set shaders (capped)
     bool m_poolSaturatedWarned = false; // rate-limits the saturation warning
     bool m_shaderFailed = false;
+    int m_shaderFailedAttempts = 0;
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;
     std::unique_ptr<GLShader> m_shader;
