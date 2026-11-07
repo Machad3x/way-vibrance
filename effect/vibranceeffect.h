@@ -11,6 +11,7 @@
 #include <effect/offscreeneffect.h>
 
 #include <QDBusAbstractAdaptor>
+#include <QElapsedTimer>
 #include <QRegion>
 #include "common_limits.h"
 #include <QVector3D>
@@ -264,8 +265,9 @@ private:
     };
     QHash<QString, ShaderVariant> m_shaderPool; // per-gain-set shaders (capped)
     bool m_poolSaturatedWarned = false; // rate-limits the saturation warning
-    bool m_shaderFailed = false;
+    bool m_shaderGaveUp = false; // terminal: no more compile attempts this load
     int m_shaderFailedAttempts = 0;
+    QElapsedTimer m_shaderRetryTimer; // rate-limits retries from the paint path
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;
     std::unique_ptr<GLShader> m_shader;

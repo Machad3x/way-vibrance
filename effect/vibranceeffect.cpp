@@ -56,6 +56,13 @@ static constexpr auto s_dbusObjectPath = "/Vibrance";
 static constexpr auto s_shaderPath = ":/effects/wayvibrance/shaders/wayvibrance.frag";
 static constexpr auto s_rulesGroupName = "WayVibranceAppRules";
 
+// Shader generation is retried at most this many times, with a small delay
+// between attempts so a transient context/compile failure is not hammered
+// once per frame. After the last failure the gains path stays disabled until
+// KWin reloads the effect.
+static constexpr int kMaxShaderAttempts = 3;
+static constexpr qint64 kShaderRetryDelayMs = 1000;
+
 // Local-DoS guards (a session client must not be able to grow unbounded
 // state or compile cost inside the compositor) now live in common_limits.h
 // (at the repo root, shared with tray/ and tests/).
@@ -774,23 +781,32 @@ bool VibranceEffect::ensureShader()
     if (m_shader) {
         return true;
     }
-    if (m_shaderFailed) {
-        m_shaderFailedAttempts++;
-        if (m_shaderFailedAttempts > 3) {
-            qWarning() << "Way Vibrance: shader generation failed after 3 attempts";
-            return false;
-        }
-        m_shaderFailed = false; // Reset for retry
+    if (m_shaderGaveUp) {
+        return false; // terminal: warn once below, never from the paint path
+    }
+    if (m_shaderFailedAttempts > 0 && m_shaderRetryTimer.isValid()
+        && m_shaderRetryTimer.elapsed() < kShaderRetryDelayMs) {
+        return false; // cooldown between compile attempts
     }
     m_shader = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
                                                                  QLatin1String(s_shaderPath));
     if (!m_shader) {
-        m_shaderFailed = true;
-        m_shaderFailedAttempts++;
-        qWarning() << "Way Vibrance: failed to load the RGB gain shader" << QLatin1String(s_shaderPath)
-                   << "- per-channel gains will be ignored in this session.";
+        ++m_shaderFailedAttempts;
+        m_shaderRetryTimer.start();
+        if (m_shaderFailedAttempts >= kMaxShaderAttempts) {
+            m_shaderGaveUp = true;
+            qWarning() << "Way Vibrance: failed to load the RGB gain shader" << QLatin1String(s_shaderPath)
+                       << "after" << kMaxShaderAttempts
+                       << "attempts - per-channel gains disabled until KWin reloads the effect.";
+        } else {
+            qWarning() << "Way Vibrance: failed to load the RGB gain shader" << QLatin1String(s_shaderPath)
+                       << "- attempt" << m_shaderFailedAttempts << "of" << kMaxShaderAttempts
+                       << "; retrying.";
+        }
         return false;
     }
+    m_shaderFailedAttempts = 0;
+    m_shaderRetryTimer.invalidate();
     ShaderBinder binder{m_shader.get()};
     m_shader->setUniform("rgbGain", m_rgbGains);
     return true;
