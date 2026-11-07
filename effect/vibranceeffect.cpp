@@ -53,6 +53,7 @@ static constexpr auto s_dbusServiceName = "org.wayvibrance";
 static constexpr auto s_dbusObjectPath = "/Vibrance";
 static constexpr auto s_shaderPath = ":/effects/wayvibrance/shaders/wayvibrance.frag";
 static constexpr auto s_rulesGroupName = "WayVibranceAppRules";
+static constexpr auto s_rulesOrderKey = "WayVibranceAppRuleOrder";
 
 // Shader generation is retried at most this many times, with a small delay
 // between attempts so a transient context/compile failure is not hammered
@@ -321,25 +322,46 @@ void VibranceEffect::reloadConfig()
     m_rules.clear();
     const KConfigGroup rulesCfg = cfg.group(QString::fromLatin1(s_rulesGroupName));
     const QMap<QString, QString> entries = rulesCfg.entryMap();
+    // entryMap() is key-sorted; rules are first-match-wins, so replaying the
+    // persisted creation order first is what keeps a profile's priority
+    // stable across a KWin restart. Entries the order does not mention (old
+    // configs, hand edits) follow in map order.
+    QStringList keys;
+    const QStringList order =
+        cfg.readEntry(QString::fromLatin1(s_rulesOrderKey), QStringList());
+    for (const QString &key : order) {
+        if (!keys.contains(key)) {
+            keys.append(key);
+        }
+    }
     for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
+        if (!keys.contains(it.key())) {
+            keys.append(it.key());
+        }
+    }
+    for (const QString &key : keys) {
+        const auto entry = entries.constFind(key);
+        if (entry == entries.constEnd()) {
+            continue; // stale order entry
+        }
         if (m_rules.size() >= kMaxAppRules) {
             qWarning() << "Way Vibrance: config profile list truncated at" << kMaxAppRules;
             break;
         }
         // Validate key length and characters
-        const QString decodedKey = QUrl::fromPercentEncoding(it.key().toLatin1());
+        const QString decodedKey = QUrl::fromPercentEncoding(entry.key().toLatin1());
         if (decodedKey.isEmpty() || decodedKey.size() > kMaxPrefixedPatternLength || decodedKey.contains(QLatin1Char('|'))) {
-            qWarning() << "Way Vibrance: invalid rule key" << it.key();
+            qWarning() << "Way Vibrance: invalid rule key" << entry.key();
             continue;
         }
         // Validate value length
-        if (it.value().size() > 512) {
-            qWarning() << "Way Vibrance: rule value too long" << it.value();
+        if (entry.value().size() > 512) {
+            qWarning() << "Way Vibrance: rule value too long" << entry.value();
             continue;
         }
         AppRule rule;
-        if (!parseRule(decodedKey + QLatin1Char('|') + it.value(), rule)) {
-            qWarning() << "Way Vibrance: failed to parse rule" << decodedKey << it.value();
+        if (!parseRule(decodedKey + QLatin1Char('|') + entry.value(), rule)) {
+            qWarning() << "Way Vibrance: failed to parse rule" << decodedKey << entry.value();
             continue;
         }
         // Validate vibrance range
@@ -1054,15 +1076,26 @@ void VibranceEffect::persist()
     // "kind:pattern", values "vibrance" plus "|r,g,b" when the profile
     // carries its own channel gains.
     cfg.group(QString::fromLatin1(s_rulesGroupName)).deleteGroup();
+    QStringList order;
     if (!m_rules.isEmpty()) {
         KConfigGroup rulesCfg(config, QStringLiteral("Effect-%1").arg(QString::fromLatin1(s_configName)));
         rulesCfg = rulesCfg.group(QString::fromLatin1(s_rulesGroupName));
+        order.reserve(m_rules.size());
         for (const AppRule &rule : m_rules) {
             const QString id = serializedRule(rule);
             const int firstSep = id.indexOf(QLatin1Char('|'));
-            rulesCfg.writeEntry(QString::fromLatin1(QUrl::toPercentEncoding(id.left(firstSep))),
-                                id.mid(firstSep + 1));
+            const QString key = QString::fromLatin1(QUrl::toPercentEncoding(id.left(firstSep)));
+            rulesCfg.writeEntry(key, id.mid(firstSep + 1));
+            order.append(key);
         }
+    }
+    // Rules are first-match-wins and KConfig stores them key-sorted, so save
+    // the creation order explicitly (in the parent group, never mixed with
+    // the rule keys). Older builds ignore the extra key.
+    if (order.isEmpty()) {
+        cfg.deleteEntry(QString::fromLatin1(s_rulesOrderKey));
+    } else {
+        cfg.writeEntry(QString::fromLatin1(s_rulesOrderKey), order);
     }
     config->sync();
 }
