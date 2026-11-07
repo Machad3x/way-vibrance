@@ -63,7 +63,7 @@ inline bool globMatch(const QString &glob, const QString &text, int *stepBudget 
     int resumeAt = -1;
     int steps = 0;
     const auto sameCase = [](QChar a, QChar b) {
-        return a == b || a.toLower() == b.toLower() || a.toUpper() == b.toUpper();
+        return a == b || a.toCaseFolded() == b.toCaseFolded();
     };
     while (t < text.size()) {
         if (++steps > kGlobStepBudget || (stepBudget && --(*stepBudget) < 0)) {
