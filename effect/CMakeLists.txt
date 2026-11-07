@@ -13,6 +13,9 @@ add_library(wayvibrance MODULE
     wayvibrance.qrc
 )
 
+# common_limits.h lives at the repo root, not beside these sources.
+target_include_directories(wayvibrance PRIVATE ${CMAKE_SOURCE_DIR})
+
 # KWin's factory macros produce Q_OBJECT code that AUTOMOC does not know by
 # name; teach it so main.moc is generated and the (misleading) "no Q_OBJECT
 # macro" warning disappears without dropping the moc include.

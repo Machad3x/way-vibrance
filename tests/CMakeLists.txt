@@ -5,7 +5,7 @@
 # Versioned guarantees for the profile glob matcher (see file header).
 add_executable(glob_match_test glob_match_test.cpp)
 target_link_libraries(glob_match_test PRIVATE Qt6::Core)
-target_include_directories(glob_match_test PRIVATE ${CMAKE_SOURCE_DIR}/effect)
+target_include_directories(glob_match_test PRIVATE ${CMAKE_SOURCE_DIR}/effect ${CMAKE_SOURCE_DIR})
 add_test(NAME glob_match_test COMMAND glob_match_test)
 
 # Versioned guarantee for the circular slider reset button (shared header

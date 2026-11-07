@@ -6,6 +6,9 @@ add_executable(wayvibrance-tray
     main.cpp
 )
 
+# common_limits.h lives at the repo root, not beside these sources.
+target_include_directories(wayvibrance-tray PRIVATE ${CMAKE_SOURCE_DIR})
+
 target_link_libraries(wayvibrance-tray
     PRIVATE
         Qt6::Core
