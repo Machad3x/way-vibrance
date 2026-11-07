@@ -18,7 +18,6 @@
 #include <QComboBox>
 #include <QPointer>
 #include <QDBusConnection>
-#include <QDBusInterface>
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusReply>
@@ -247,7 +246,7 @@ public:
         attachInterface();
     }
 
-    bool effectAvailable() const { return m_interface != nullptr; }
+    bool effectAvailable() const { return m_attached; }
 
     /** The QAction backing the configurable global hotkey (toggle on/off). */
     QAction *toggleAction() const { return m_toggleAction; }
@@ -270,9 +269,6 @@ private:
      */
     void tryLoadEffectVia(const QString &service, int fallbacksLeft)
     {
-        QDBusInterface effects(service,
-                               QStringLiteral("/Effects"),
-                               QStringLiteral("org.kde.kwin.Effects"));
         QDBusMessage probe = QDBusMessage::createMethodCall(
             service, QStringLiteral("/Effects"),
             QStringLiteral("org.kde.kwin.Effects"),
@@ -282,19 +278,25 @@ private:
         auto *watcher = new QDBusPendingCallWatcher(call, this);
         connect(watcher, &QDBusPendingCallWatcher::finished, this,
                 [this, service, fallbacksLeft](QDBusPendingCallWatcher *w) {
-                    const bool known = !w->isError() && w->reply().arguments().value(0).toBool();
+                    const bool isError = w->isError();
+                    const bool known = !isError && w->reply().arguments().value(0).toBool();
                     w->deleteLater();
                     if (known) {
                         return; // already running: the watcher will have attached
                     }
-                    if (w->isError() && fallbacksLeft > 0) {
+                    if (isError && fallbacksLeft > 0) {
                         tryLoadEffectVia(QLatin1String(kServices[1]), fallbacksLeft - 1);
                         return;
                     }
-                    QDBusInterface effects(service, QStringLiteral("/Effects"),
-                                           QStringLiteral("org.kde.kwin.Effects"));
-                    effects.asyncCall(QStringLiteral("loadEffect"),
-                                      QString::fromLatin1(s_effectId));
+                    // Plain async message: constructing a QDBusInterface here
+                    // would introspect the service synchronously (Qt's 25 s
+                    // default timeout), defeating the bounded probe above.
+                    QDBusMessage load = QDBusMessage::createMethodCall(
+                        service, QStringLiteral("/Effects"),
+                        QStringLiteral("org.kde.kwin.Effects"),
+                        QStringLiteral("loadEffect"));
+                    load.setArguments({QString::fromLatin1(s_effectId)});
+                    QDBusConnection::sessionBus().asyncCall(load, kRefreshTimeoutMs);
                 });
     }
 
@@ -307,15 +309,13 @@ public:
 
     void requestVibranceEnabled(bool enabled)
     {
-        if (m_interface) {
-            m_interface->asyncCall(QStringLiteral("setEnabled"), enabled);
-        }
+        send(QStringLiteral("setEnabled"), {enabled});
     }
 
     void requestPrimaryOnly(bool primaryOnly)
     {
-        if (m_interface) {
-            m_interface->asyncCall(QStringLiteral("setPrimaryOnly"), primaryOnly);
+        if (m_attached) {
+            send(QStringLiteral("setPrimaryOnly"), {primaryOnly});
             QTimer::singleShot(160, this, &VibranceController::refreshState);
         }
     }
@@ -325,12 +325,12 @@ public:
      *  longer block whoever opened the monitor dropdown. */
     void requestScreenList(const QString &currentName)
     {
-        if (!m_interface) {
+        if (!m_attached) {
             Q_EMIT screenListFromEffect(currentName, {});
             return;
         }
         QDBusMessage msg = QDBusMessage::createMethodCall(
-            QString::fromLatin1(s_vibranceService),
+            m_serviceOwner,
             QString::fromLatin1(s_vibrancePath),
             QString::fromLatin1(s_vibranceInterface),
             QStringLiteral("screenList"));
@@ -355,8 +355,8 @@ public:
     /** Empty name selects "automatic" (first output) on the effect side. */
     void requestSetPrimaryOutput(const QString &name)
     {
-        if (m_interface) {
-            m_interface->asyncCall(QStringLiteral("setPrimaryOutputName"), name);
+        if (m_attached) {
+            send(QStringLiteral("setPrimaryOutputName"), {name});
             QTimer::singleShot(160, this, &VibranceController::refreshState);
         }
     }
@@ -379,14 +379,14 @@ public:
      */
     void refreshState()
     {
-        if (!m_interface) {
+        if (!m_attached) {
             return;
         }
         const quint64 seq = ++m_refreshSeq;
         m_gainMask = 0;
         const auto issue = [this, seq](const QString &method) {
             QDBusMessage msg = QDBusMessage::createMethodCall(
-                QString::fromLatin1(s_vibranceService),
+                m_serviceOwner,
                 QString::fromLatin1(s_vibrancePath),
                 QString::fromLatin1(s_vibranceInterface),
                 method);
@@ -420,8 +420,8 @@ public:
     /** Creates or updates a per-app profile; the effect echoes the full list. */
     void requestSetAppRule(const QString &prefixedPattern, double vibrance)
     {
-        if (m_interface) {
-            m_interface->asyncCall(QStringLiteral("setAppRule"), prefixedPattern, vibrance);
+        if (m_attached) {
+            send(QStringLiteral("setAppRule"), {prefixedPattern, vibrance});
             // Do not depend on the echo alone: pull the authoritative state.
             QTimer::singleShot(120, this, &VibranceController::refreshState);
         }
@@ -430,16 +430,16 @@ public:
     void requestSetAppRuleFull(const QString &prefixedPattern, double vibrance,
                                double red, double green, double blue)
     {
-        if (!m_interface) {
+        if (!m_attached) {
             return;
         }
         if (m_profilesFull) {
-            m_interface->asyncCall(QStringLiteral("setAppRuleFull"), prefixedPattern, vibrance,
-                                   red, green, blue);
+            send(QStringLiteral("setAppRuleFull"),
+                 {prefixedPattern, vibrance, red, green, blue});
         } else {
             // Older effect: vibrance-only fallback (gains are not offered in
             // the dialog in this mode anyway).
-            m_interface->asyncCall(QStringLiteral("setAppRule"), prefixedPattern, vibrance);
+            send(QStringLiteral("setAppRule"), {prefixedPattern, vibrance});
         }
         QTimer::singleShot(120, this, &VibranceController::refreshState);
     }
@@ -447,16 +447,16 @@ public:
     /** Cosmetic list label; matching keeps using the pattern. */
     void requestSetAppRuleName(const QString &prefixedPattern, const QString &name)
     {
-        if (m_interface && m_profilesFull) {
-            m_interface->asyncCall(QStringLiteral("setAppRuleName"), prefixedPattern, name);
+        if (m_attached && m_profilesFull) {
+            send(QStringLiteral("setAppRuleName"), {prefixedPattern, name});
             QTimer::singleShot(120, this, &VibranceController::refreshState);
         }
     }
 
     void requestRemoveAppRule(const QString &prefixedPattern)
     {
-        if (m_interface) {
-            m_interface->asyncCall(QStringLiteral("removeAppRule"), prefixedPattern);
+        if (m_attached) {
+            send(QStringLiteral("removeAppRule"), {prefixedPattern});
             QTimer::singleShot(120, this, &VibranceController::refreshState);
         }
     }
@@ -470,14 +470,14 @@ public:
         if (m_lastFocusedPending) {
             return; // a reply for the earlier click is already coming; no dialog stacking
         }
-        if (!m_interface) {
+        if (!m_attached) {
             cb(QString()); // no effect: open the dialog with an empty pre-fill (as before)
             return;
         }
         m_lastFocusedPending = true;
         m_lastFocusedCb = std::move(cb);
         QDBusMessage msg = QDBusMessage::createMethodCall(
-            QString::fromLatin1(s_vibranceService),
+            m_serviceOwner,
             QString::fromLatin1(s_vibrancePath),
             QString::fromLatin1(s_vibranceInterface),
             QStringLiteral("lastFocusedAppId"));
@@ -595,7 +595,7 @@ private Q_SLOTS:
         }
         // Only the connection that currently OWNS the well-known name is
         // trusted (that owner is kept fresh via serviceOwnerChanged).
-        if (m_serviceOwner.isEmpty() || msg.service() != m_serviceOwner) {
+        if (m_serviceOwner.isEmpty() || msg.service() != m_serviceOwner || !m_attached) {
             return;
         }
         const QList<QVariant> args = msg.arguments();
@@ -656,7 +656,7 @@ private Q_SLOTS:
         const bool isError = watcher->isError();
         const QDBusMessage reply = watcher->reply(); // is an error message when isError
         watcher->deleteLater();
-        if (seq != m_refreshSeq || !m_interface) {
+        if (seq != m_refreshSeq || !m_attached) {
             return; // stale round (or detached meanwhile)
         }
         const QList<QVariant> args = reply.arguments();
@@ -703,7 +703,7 @@ private Q_SLOTS:
                 // Fine-grained capability: profiles with per-channel gains and
                 // display names need the newer setAppRuleFull/setAppRuleName.
                 QDBusMessage introspect = QDBusMessage::createMethodCall(
-                    QString::fromLatin1(s_vibranceService),
+                    m_serviceOwner,
                     QString::fromLatin1(s_vibrancePath),
                     QStringLiteral("org.freedesktop.DBus.Introspectable"),
                     QStringLiteral("Introspect"));
@@ -726,19 +726,37 @@ private Q_SLOTS:
     /** What the global hotkey runs: an atomic, server-side flip. */
     void toggleVibrance()
     {
-        if (!m_interface) {
+        if (!m_attached) {
             // Not connected yet: bring the effect up; the next press toggles.
             ensureEffectLoaded();
             return;
         }
         // The effect flips its own state — no cached copy to go stale.
-        m_interface->asyncCall(QStringLiteral("toggleEnabled"));
+        send(QStringLiteral("toggleEnabled"));
         // Belt and braces: re-pull state shortly after so every checkbox and
         // the tooltip reflect reality even if the signal path misbehaves.
         QTimer::singleShot(160, this, &VibranceController::refreshState);
     }
 
 private:
+    /** Fire-and-forget call to the verified effect connection. Addressing
+     *  the unique owner (not the well-known name) means a later owner swap
+     *  can never receive our requests, and no synchronous introspection is
+     *  involved. */
+    void send(const QString &method, const QVariantList &args = {})
+    {
+        if (!m_attached) {
+            return;
+        }
+        QDBusMessage msg = QDBusMessage::createMethodCall(
+            m_serviceOwner,
+            QString::fromLatin1(s_vibrancePath),
+            QString::fromLatin1(s_vibranceInterface),
+            method);
+        msg.setArguments(args);
+        QDBusConnection::sessionBus().asyncCall(msg, kRefreshTimeoutMs);
+    }
+
     void setProfilesSupported(bool supported)
     {
         if (supported == m_profilesSupported) {
@@ -750,15 +768,15 @@ private:
 
     void flushRGB()
     {
-        if (!m_interface || !m_rgbPending) {
+        if (!m_attached || !m_rgbPending) {
             return;
         }
         m_rgbPending = false;
-        m_interface->asyncCall(QStringLiteral("setRGBGains"), m_pendingRed, m_pendingGreen, m_pendingBlue);
+        send(QStringLiteral("setRGBGains"), {m_pendingRed, m_pendingGreen, m_pendingBlue});
     }
     void flush()
     {
-        if (!m_interface || m_pendingPercent < 0) {
+        if (!m_attached || m_pendingPercent < 0) {
             return;
         }
         const double value = m_pendingPercent / 100.0;
@@ -767,12 +785,12 @@ private:
             return;
         }
         m_lastSent = value;
-        m_interface->asyncCall(QStringLiteral("setVibrance"), value);
+        send(QStringLiteral("setVibrance"), {value});
     }
 
     void attachInterface()
     {
-        if (m_interface) {
+        if (m_attached) {
             return;
         }
         const QString owner = serviceOwnerOf(QString::fromLatin1(s_vibranceService));
@@ -787,11 +805,11 @@ private:
                                  << "non-compositor process; ignoring it";
             return;
         }
-        m_interface = new QDBusInterface(QString::fromLatin1(s_vibranceService),
-                                         QString::fromLatin1(s_vibrancePath),
-                                         QString::fromLatin1(s_vibranceInterface),
-                                         QDBusConnection::sessionBus(),
-                                         this);
+        // No QDBusInterface here on purpose: its constructor introspects the
+        // service synchronously (Qt's 25 s default timeout), which would undo
+        // the bounded-probe design. Every call goes to this unique owner via
+        // send()/asyncCall instead.
+        m_attached = true;
 
         auto bus = QDBusConnection::sessionBus();
         // One generic subscription instead of five typed ones: with this
@@ -817,7 +835,7 @@ private:
 
     void detachInterface()
     {
-        if (!m_interface) {
+        if (!m_attached) {
             return;
         }
         auto bus = QDBusConnection::sessionBus();
@@ -828,8 +846,7 @@ private:
                        this,
                        SLOT(onSignal(QDBusMessage)));
         ++m_refreshSeq; // drop any in-flight refresh replies with the old owner
-        delete m_interface;
-        m_interface = nullptr;
+        m_attached = false;
         m_lastSent = -1.0;
         m_lastFocusedPending = false;
         m_lastFocusedCb = nullptr;
@@ -851,7 +868,7 @@ private:
         }
     }
 
-    QDBusInterface *m_interface = nullptr;
+    bool m_attached = false; // talking to a verified effect connection
     QString m_serviceOwner; // unique bus name of the org.wayvibrance owner
     quint64 m_refreshSeq = 0;
     bool m_lastFocusedPending = false;
