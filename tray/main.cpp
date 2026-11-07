@@ -16,9 +16,10 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QPointer>
 #include <QDBusConnection>
-#include <QDBusConnectionInterface>
 #include <QDBusInterface>
+#include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusReply>
 #include <QDBusServiceWatcher>
@@ -115,49 +116,70 @@ static bool saneReply(const QDBusReply<double> &reply, double &out)
     return reply.isValid() && saneFactor(QVariant(reply.value()), out);
 }
 
+// Identity probes are synchronous by nature (the PID must be known before the
+// interface is trusted), but they are bounded: a wedged bus must not freeze
+// the tray for Qt's 25-second default per call.
+static constexpr int kBusIdentityTimeoutMs = 1000;
+
+/** Unique-name owner of a well-known service, or empty when unowned. */
+static QString serviceOwnerOf(const QString &service, int timeoutMs = kBusIdentityTimeoutMs)
+{
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(
+        QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.DBus"),
+                                       QStringLiteral("/org/freedesktop/DBus"),
+                                       QStringLiteral("org.freedesktop.DBus"),
+                                       QStringLiteral("GetNameOwner"))
+            << service,
+        QDBus::Block, timeoutMs);
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
+        return QString();
+    }
+    return reply.arguments().first().toString();
+}
+
+/** PID of a connection name (well-known or unique); 0 on error. */
+static uint pidOfBusName(const QString &busName, int timeoutMs = kBusIdentityTimeoutMs)
+{
+    if (busName.isEmpty()) {
+        return 0;
+    }
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(
+        QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.DBus"),
+                                       QStringLiteral("/org/freedesktop/DBus"),
+                                       QStringLiteral("org.freedesktop.DBus"),
+                                       QStringLiteral("GetConnectionUnixProcessID"))
+            << busName,
+        QDBus::Block, timeoutMs);
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
+        return 0;
+    }
+    return reply.arguments().first().toUInt();
+}
+
 /**
  * True when the connection owning org.wayvibrance is the compositor
  * process itself. Checking the well-known name alone is not enough: a
  * session peer can grab it before the effect registers. The authoritative
- * identity is the PID — same as the owner of org.kde.KWin (or the legacy
- * org.kde.kwin.Effects service). There is deliberately no /proc/comm
- * fallback: prctl(PR_SET_NAME) forges process names trivially, and every
- * KWin 6 release owns org.kde.KWin unconditionally.
+ * identity is the PID, compared with the owner of org.kde.KWin.
+ *
+ * Only org.kde.KWin is trusted as the anchor. The legacy
+ * org.kde.kwin.Effects name is deliberately NOT accepted: every KWin 6
+ * release owns org.kde.KWin unconditionally, and the legacy name is usually
+ * free, so accepting it would let a malicious peer own both names and pass
+ * the PID comparison. There is no /proc/<pid>/comm fallback either:
+ * prctl(PR_SET_NAME) forges process names trivially.
  */
 static bool ownerIsCompositor(const QString &owner)
 {
     if (owner.isEmpty()) {
         return false;
     }
-    auto *iface = QDBusConnection::sessionBus().interface();
-    if (!iface) {
-        return false;
-    }
-    const auto pidOf = [](const QString &busName) -> uint {
-        const QDBusMessage reply = QDBusConnection::sessionBus().call(
-            QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.DBus"),
-                                           QStringLiteral("/org/freedesktop/DBus"),
-                                           QStringLiteral("org.freedesktop.DBus"),
-                                           QStringLiteral("GetConnectionUnixProcessID"))
-            << busName);
-        return reply.arguments().isEmpty() ? 0u : reply.arguments().first().toUInt();
-    };
-    const uint pid = pidOf(owner);
+    const uint pid = pidOfBusName(owner);
     if (pid == 0) {
         return false;
     }
-    static const char *kCompositorServices[] = {"org.kde.KWin", "org.kde.kwin.Effects"};
-    for (const char *name : kCompositorServices) {
-        const QString kwinOwner = iface->serviceOwner(QLatin1String(name)).value();
-        if (!kwinOwner.isEmpty() && pidOf(kwinOwner) == pid) {
-            return true;
-        }
-    }
-    // Deliberately no /proc/<pid>/comm fallback: a process can rename itself
-    // to "kwin_wayland" (prctl) and pass that check. Every KWin 6 release
-    // owns org.kde.KWin unconditionally — if a candidate PID matches
-    // neither compositor service, it is not the compositor.
-    return false;
+    const uint kwinPid = pidOfBusName(QStringLiteral("org.kde.KWin"));
+    return kwinPid != 0 && pid == kwinPid;
 }
 
 /**
@@ -196,11 +218,9 @@ public:
                 this, &VibranceController::onServiceUnregistered);
 
         // Well-known names are spoofable by any session peer, so signals are
-        // trusted by UNIQUE sender identity: keep the current owner of our
-        // name cached and drop anything else in onSignal().
-        if (auto *iface = QDBusConnection::sessionBus().interface()) {
-            m_serviceOwner = iface->serviceOwner(QLatin1String(s_vibranceService)).value();
-        }
+        // trusted by UNIQUE sender identity: serviceOwnerChanged keeps the
+        // current owner cached and onSignal() drops anything else. The initial
+        // owner is resolved (with a bounded timeout) inside attachInterface().
         connect(&m_watcher, &QDBusServiceWatcher::serviceOwnerChanged, this,
                 [this](const QString &name, const QString &, const QString &newOwner) {
                     if (name != QLatin1String(s_vibranceService)) {
@@ -223,14 +243,9 @@ public:
                 });
 
         // The effect may already be running (loaded by a previous session's
-        // configuration); connect to it right away. interface() may be null
-        // (no session bus) — same guarded access used everywhere above.
-        if (auto *iface = QDBusConnection::sessionBus().interface()) {
-            const QDBusReply<bool> registered = iface->isServiceRegistered(QLatin1String(s_vibranceService));
-            if (registered.isValid() && registered.value()) {
-                attachInterface();
-            }
-        }
+        // configuration); attachInterface() resolves the owner with a bounded
+        // timeout and returns silently when the name is not currently owned.
+        attachInterface();
     }
 
     bool effectAvailable() const { return m_interface != nullptr; }
@@ -761,12 +776,11 @@ private:
         if (m_interface) {
             return;
         }
-        if (auto *iface = QDBusConnection::sessionBus().interface()) {
-            const QDBusReply<QString> owner = iface->serviceOwner(QLatin1String(s_vibranceService));
-            if (owner.isValid()) {
-                m_serviceOwner = owner.value();
-            }
+        const QString owner = serviceOwnerOf(QString::fromLatin1(s_vibranceService));
+        if (owner.isEmpty()) {
+            return; // not running (yet); serviceRegistered will bring us back
         }
+        m_serviceOwner = owner;
         // Trust is anchored to the process, not the name: whoever grabbed
         // org.wayvibrance must BE the compositor running our effect.
         if (!ownerIsCompositor(m_serviceOwner)) {
