@@ -401,9 +401,11 @@ QString VibranceEffect::serializedRule(const AppRule &rule)
                    .arg(rule.gains.z(), 0, 'g', 4);
     }
     if (!rule.displayName.isEmpty()) {
-        QString escaped = rule.displayName;
-        escaped.replace(QLatin1Char('|'), QStringLiteral("\\|"));
-        out += QLatin1Char('|') + escaped;
+        // Names are guaranteed pipe-free at every entry point (applyRule /
+        // setAppRuleName strip '|'), so no escaping is needed — and escaping
+        // here would be ineffective anyway, because parseRule splits on '|'
+        // before it could unescape the field.
+        out += QLatin1Char('|') + rule.displayName;
     }
     return out;
 }
@@ -440,9 +442,7 @@ bool VibranceEffect::parseRule(const QString &serialized, AppRule &out)
         out.gains = QVector3D(static_cast<float>(red), static_cast<float>(green), static_cast<float>(blue));
     }
     if (fields.size() == 4) {
-        QString name = fields.at(3);
-        name.replace(QStringLiteral("\\|"), QStringLiteral("|"));
-        out.displayName = name;
+        out.displayName = fields.at(3);
     }
     QString head = fields.at(0);
     if (head.startsWith(QLatin1String("title:"))) {
