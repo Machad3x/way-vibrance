@@ -20,7 +20,6 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
-#include <QDBusReply>
 #include <QDBusServiceWatcher>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -104,14 +103,6 @@ static QStringList sanitizeRuleList(const QStringList &in)
         return e.isEmpty() || patternLen > kMaxPrefixedPatternLength || e.size() > 512;
     });
     return rules;
-}
-
-/** Same finite+range clamp applied to numeric METHOD replies, not just
- *  signal arguments — a fake service must not be able to hand the UI a
- *  NaN via refreshState() either. Returns false to drop the reply. */
-static bool saneReply(const QDBusReply<double> &reply, double &out)
-{
-    return reply.isValid() && saneFactor(QVariant(reply.value()), out);
 }
 
 // Identity probes are synchronous by nature (the PID must be known before the
