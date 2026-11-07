@@ -579,6 +579,13 @@ void VibranceEffect::setAppRule(const QString &prefixedPattern, qreal vibrance)
 void VibranceEffect::setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
                                     qreal red, qreal green, qreal blue)
 {
+    // applyRule() rejects non-finite gains; validate before clampGains(),
+    // which deliberately degrades non-finite channels to neutral for the
+    // global path.
+    if (!std::isfinite(red) || !std::isfinite(green) || !std::isfinite(blue)) {
+        qWarning() << "Way Vibrance: ignoring non-finite profile gains";
+        return;
+    }
     applyRule(prefixedPattern, vibrance, clampGains(red, green, blue), std::nullopt);
 }
 
