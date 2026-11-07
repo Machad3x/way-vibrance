@@ -121,10 +121,19 @@ case "$FAMILY" in
             "libdrm:libdrm" \
             "wayland:wayland"
         if ((${#MISSING[@]})); then
-            # pacman -S resolves from the sync databases; sync the databases
-            # (never the packages) only if they have not been fetched yet.
-            [ -n "$(ls /var/lib/pacman/sync/*.db 2>/dev/null)" ] \
-                || $SUDO pacman -Sy --noconfirm
+            # Arch does not support partial upgrades: never refresh the sync
+            # database with `pacman -Sy` and then install from it. The user is
+            # expected to keep the system updated (`pacman -Syu`); if the
+            # database is missing, stop with a clear instruction instead of
+            # silently creating a partial-upgrade state.
+            if ! ls /var/lib/pacman/sync/*.db >/dev/null 2>&1; then
+                echo "==> No pacman sync database found. Run 'sudo pacman -Syu' once, then re-run this script." >&2
+                exit 1
+            fi
+            if [ -n "$(pacman -Qu 2>/dev/null || true)" ]; then
+                echo "==> Pending system updates detected. Arch does not support partial upgrades;" >&2
+                echo "    run 'sudo pacman -Syu' first if the dependency install below fails." >&2
+            fi
             echo "==> Installing missing packages: ${MISSING[*]}"
             $SUDO pacman -S --needed --noconfirm "${MISSING[@]}"
         else
@@ -223,12 +232,15 @@ case "$FAMILY" in
         ;;
 esac
 
-# The KWin effects headers are the hard build requirement: fail early and
-# plainly instead of deep inside cmake.
-if ! ls /usr/include/kwin/effect/effect.h >/dev/null 2>&1; then
-    echo "==> KWin development headers not found. Install the kwin dev package:" >&2
-    echo "    Arch: kwin · Fedora: kwin-devel · Debian/Ubuntu: libkwin-electron-dev (or libkwin-dev)" >&2
-    exit 1
+# The KWin effects headers are the hard build requirement. Do not hardcode
+# a single include root: CMake searches CMAKE_PREFIX_PATH/KWin_DIR and knows
+# the real location. Only print a hint for the common layout; the
+# authoritative check is find_package(KWin REQUIRED).
+if ! ls /usr/include/kwin/effect/effect.h >/dev/null 2>&1 \
+   && [ -z "${KWin_DIR:-}" ] && [ -z "${CMAKE_PREFIX_PATH:-}" ]; then
+    echo "==> KWin development headers not found under /usr/include/kwin." >&2
+    echo "    If they are installed elsewhere, set CMAKE_PREFIX_PATH or KWin_DIR." >&2
+    echo "    Otherwise install: Arch kwin · Fedora kwin-devel · Debian/Ubuntu libkwin-dev." >&2
 fi
 
 echo "==> Configuring…"
