@@ -145,14 +145,22 @@ case "$cmd" in
                 ;;
             set)
                 if [ $# -ge 7 ]; then
-                    call setAppRuleFull "$3" "$4" "$5" "$6" "$7"
+                    # Supports patterns with spaces by joining all args
+                    PATTERN="$3"
+                    VIBRANCE="$4"
+                    RED="$5"
+                    GREEN="$6"
+                    BLUE="$7"
+                    call setAppRuleFull "$PATTERN" "$VIBRANCE" "$RED" "$GREEN" "$BLUE"
                 elif [ $# -ge 4 ]; then
-                    call setAppRule "$3" "$4"
+                    PATTERN="$3"
+                    VIBRANCE="$4"
+                    call setAppRule "$PATTERN" "$VIBRANCE"
                 else
                     echo "usage: wayvibrance app set <pattern> <vibrance> [red green blue]  (see: wayvibrance --help)" >&2
                     exit 1
                 fi
-                ;;
+                ;; 
             del)
                 [ $# -ge 3 ] || { echo "usage: wayvibrance app del <pattern>" >&2; exit 1; }
                 call removeAppRule "$3"
