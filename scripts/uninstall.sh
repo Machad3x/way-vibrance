@@ -217,5 +217,9 @@ INFO
 fi
 
 echo
-echo "==> Done. If the effect had been running this session, a fresh login"
-echo "    guarantees a pristine compositor state (it was unloaded live too)."
+if [ "$DRY" = 1 ]; then
+    echo "==> Done. Dry run only: nothing was removed, purged or unloaded."
+else
+    echo "==> Done. If the effect had been running this session, a fresh login"
+    echo "    guarantees a pristine compositor state (it was unloaded live too)."
+fi
