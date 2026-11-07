@@ -57,6 +57,15 @@ needs_sudo() {
     return 1
 }
 
+# Configuration paths are needed before any destructive step: kwinrc is
+# rewritten by the purge below, so the tool it depends on must exist first.
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+if [ "$PURGE" = 1 ] && [ -f "$CFG/kwinrc" ] && ! command -v python3 >/dev/null 2>&1; then
+    echo "error: python3 is required to purge kwinrc atomically;" >&2
+    echo "       install it or remove the [Effect-wayvibrance] groups manually." >&2
+    exit 1
+fi
+
 # 1. Hot-unload from the running session first: stops the effect's
 #    redirects now, and stops KWin re-persisting config we may purge.
 QDBUS="$(command -v qdbus6 || command -v qdbus-qt6 || command -v qdbus || true)"
@@ -71,8 +80,9 @@ fi
 #    of the prefix), then containment under the real prefix, then the
 #    project's filename allowlist. A missing or failed manifest simply
 #    contributes no candidates; the canonical set alone is still fully
-#    validated. Pure bash: no python needed at uninstall time.
-REALPREFIX="$(realpath -P -- "$PREFIX" 2>/dev/null || printf '%s' "$PREFIX")"
+#    validated. Pure bash: no python needed to remove files (only the
+#    optional kwinrc purge below uses python3).
+REALPREFIX="$(realpath -m -- "$PREFIX" 2>/dev/null || printf '%s' "$PREFIX")"
 
 validate_candidate() {
     local raw="$1" cand rel base
@@ -139,7 +149,6 @@ else
 fi
 
 # 3. Configuration: purged only on demand; always reported.
-CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
 if [ "$PURGE" = 1 ]; then
     echo "==> Purging configuration"
     if [ -f "$CFG/kwinrc" ]; then
@@ -147,9 +156,15 @@ if [ "$PURGE" = 1 ]; then
             echo "DRY: python3 strip [Effect-wayvibrance]* groups from $CFG/kwinrc"
         else
             python3 - "$CFG/kwinrc" <<'PY'
+import os
+import stat
 import sys
-path = sys.argv[1]
-lines = open(path).read().splitlines(keepends=True)
+import tempfile
+
+path = os.path.realpath(sys.argv[1])
+with open(path, "r", encoding="utf-8", errors="surrogateescape") as fh:
+    lines = fh.readlines()
+
 drop = {"[Effect-wayvibrance]", "[Effect-wayvibrance][WayVibranceAppRules]"}
 out, skipping = [], False
 for ln in lines:
@@ -161,7 +176,22 @@ for ln in lines:
         skipping = False
     if not skipping:
         out.append(ln)
-open(path, "w").writelines(out)
+
+# Atomic replace: a crash, full disk or signal must never leave kwinrc
+# truncated (KConfig would then lose every unrelated group too).
+st = os.stat(path)
+fd, tmp = tempfile.mkstemp(prefix=".kwinrc.", dir=os.path.dirname(path))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.writelines(out)
+    os.chmod(tmp, stat.S_IMODE(st.st_mode))
+    os.replace(tmp, path)
+except BaseException:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    raise
 print("    kwinrc: effect section + profiles removed")
 PY
         fi
