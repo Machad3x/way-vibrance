@@ -68,8 +68,9 @@ fi
 
 # 1. Hot-unload from the running session first: stops the effect's
 #    redirects now, and stops KWin re-persisting config we may purge.
+#    --dry-run must change nothing, so it never unloads the live effect.
 QDBUS="$(command -v qdbus6 || command -v qdbus-qt6 || command -v qdbus || true)"
-if [ -n "$QDBUS" ]; then
+if [ "$DRY" = 0 ] && [ -n "$QDBUS" ]; then
     "$QDBUS" org.kde.KWin /Effects org.kde.kwin.Effects.unloadEffect wayvibrance >/dev/null 2>&1 || true
 fi
 
