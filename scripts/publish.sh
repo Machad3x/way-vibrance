@@ -19,7 +19,35 @@ VERSION="$(grep -m1 'project(way-vibrance VERSION' CMakeLists.txt | awk '{print 
 TAG="v${VERSION}"
 DESCRIPTION="Digital Vibrance + per-channel RGB gains + per-app profiles for KDE Plasma on Wayland (vibrance-gui counterpart, AI-assisted)"
 
-git branch -M main
+# GitHub repo names are restricted to this set; validating also keeps the
+# name safe to interpolate into the JSON payload below.
+if [[ ! "$REPO_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "error: invalid repository name '$REPO_NAME' (allowed: letters, digits, '.', '_' and '-')" >&2
+    exit 1
+fi
+case "$VISIBILITY" in
+    public|private) ;;
+    *) echo "error: visibility must be 'public' or 'private'" >&2; exit 1 ;;
+esac
+
+# Publishing must not rewrite the caller's branch. Push the current commit
+# to main explicitly instead of running 'git branch -M main' (which would
+# rename a branch such as 'redesign' even when no credentials are available).
+if ! git symbolic-ref -q HEAD >/dev/null; then
+    echo "error: HEAD is detached; check out a branch before publishing" >&2
+    exit 1
+fi
+CURRENT_BRANCH="$(git symbolic-ref --short HEAD)"
+
+ensure_tag() {
+    if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+        if [ "$(git rev-list -n1 "$TAG")" != "$(git rev-parse HEAD)" ]; then
+            echo "warning: tag $TAG already exists and does not point at HEAD" >&2
+        fi
+        return
+    fi
+    git tag -a "$TAG" -m "Way Vibrance $TAG"
+}
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     echo "==> Using gh CLI"
@@ -33,8 +61,8 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     else
         git remote add origin "$REMOTE"
     fi
-    git tag -a "$TAG" -m "Way Vibrance $TAG" 2>/dev/null || true
-    git push -u origin main --follow-tags
+    ensure_tag
+    git push -u origin "HEAD:main" --follow-tags
     gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" \
         --title "Way Vibrance $TAG" --notes "$(cat <<EOF
 Release ${VERSION}.
@@ -101,8 +129,8 @@ WVASKEOF
     REMOTE="https://github.com/$OWNER/$REPO_NAME.git"
     git remote remove origin 2>/dev/null || true
     git remote add origin "$REMOTE"
-    git tag -a "$TAG" -m "Way Vibrance $TAG" 2>/dev/null || true
-    GITHUB_TOKEN="$GITHUB_TOKEN" GIT_ASKPASS="$ASKPASS" GIT_TERMINAL_PROMPT=0 git -c credential.helper= push -u origin main --follow-tags
+    ensure_tag
+    GITHUB_TOKEN="$GITHUB_TOKEN" GIT_ASKPASS="$ASKPASS" GIT_TERMINAL_PROMPT=0 git -c credential.helper= push -u origin "HEAD:main" --follow-tags
     json=$(python3 - "$TAG" "$VERSION" <<'PY'
 import json, sys
 tag, ver = sys.argv[1], sys.argv[2]
@@ -137,4 +165,4 @@ fi
 
 OWNER="${OWNER:-$(git remote get-url origin | sed -E 's#.*github.com[:/]([^/]+)/.*#\1#')}"
 echo
-echo "==> Done: https://github.com/$OWNER/$REPO_NAME  (release $TAG)"
+echo "==> Done: https://github.com/$OWNER/$REPO_NAME  (release $TAG from $CURRENT_BRANCH -> main)"
