@@ -1550,12 +1550,11 @@ public:
             }
         });
         connect(m_profileList, &QListWidget::itemDoubleClicked, this, [controller, this, pushDialog](QListWidgetItem *item) {
-            const int row = m_profileList->row(item);
-            if (row < 0 || row >= m_profileEntries.size()) {
+            if (!item) {
                 return;
             }
             ProfileValues values;
-            if (!parseProfileEntry(m_profileEntries.at(row), values)) {
+            if (!parseProfileEntry(item->data(Qt::UserRole).toString(), values)) {
                 return;
             }
             const QString oldPattern = values.prefixedPattern;
@@ -1880,7 +1879,6 @@ private:
             return; // echo of what we already show: keep the user's place
         }
         const int previousRow = m_profileList->currentRow();
-        m_rebuildingProfiles = true;
         m_profileEntries = entries;
         m_profileList->clear();
         for (const QString &entry : entries) {
@@ -1901,23 +1899,26 @@ private:
                             .arg(values.bluePercent);
             }
             auto *item = new QListWidgetItem(text, m_profileList);
+            // Rows are bound to their own serialized entry: unparseable
+            // entries are skipped above, so indexing m_profileEntries by row
+            // would shift every later profile once one is rejected.
+            item->setData(Qt::UserRole, entry);
             item->setToolTip(QStringLiteral("%1\n%2").arg(values.prefixedPattern, entry));
         }
         if (previousRow >= 0 && previousRow < m_profileList->count()) {
             m_profileList->setCurrentRow(previousRow);
         }
-        m_rebuildingProfiles = false;
         updateProfileEmptyState();
     }
 
     QString currentProfilePattern() const
     {
-        const int row = m_profileList->currentRow();
-        if (row < 0 || row >= m_profileEntries.size()) {
+        const QListWidgetItem *item = m_profileList->currentItem();
+        if (!item) {
             return QString();
         }
         ProfileValues values;
-        if (!parseProfileEntry(m_profileEntries.at(row), values)) {
+        if (!parseProfileEntry(item->data(Qt::UserRole).toString(), values)) {
             return QString();
         }
         return values.prefixedPattern;
@@ -1934,7 +1935,6 @@ private:
     QStackedWidget *m_profileStack = nullptr;
     QListWidget *m_profileList = nullptr;
     QStringList m_profileEntries;
-    bool m_rebuildingProfiles = false;
 
 public:
     void setAutostartChecked(bool on)
