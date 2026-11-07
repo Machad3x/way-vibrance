@@ -7,7 +7,6 @@
 #include "globmatch_p.h"
 #include "vibranceeffect.h"
 #include "common_limits.h"
-#include <QDBusConnection>
 
 #include <window.h>
 
