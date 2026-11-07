@@ -93,7 +93,8 @@ ensure_loaded() {
 cmd="${1:-get}"
 case "$cmd" in
     get)
-        [ $# -eq 1 ] || die_usage "wayvibrance get"
+        # Bare 'wayvibrance' is the documented shorthand for 'get'.
+        [ $# -le 1 ] || die_usage "wayvibrance get"
         ensure_loaded
         call vibrance
         ;;
@@ -126,7 +127,8 @@ case "$cmd" in
                 [ $# -eq 2 ] || die_usage "wayvibrance primary off"
                 call setPrimaryOnly false ;;
             get)
-                [ $# -eq 2 ] || die_usage "wayvibrance primary get"
+                # Bare 'primary' defaults to 'get' (see ${2:-get} above).
+                [ $# -le 2 ] || die_usage "wayvibrance primary get"
                 call primaryOnly ;;
             outputs)
                 [ $# -eq 2 ] || die_usage "wayvibrance primary outputs"
@@ -164,7 +166,8 @@ case "$cmd" in
         ensure_loaded
         case "${2:-list}" in
             list)
-                [ $# -eq 2 ] || die_usage "wayvibrance app list"
+                # Bare 'app' defaults to 'list' (see ${2:-list} above).
+                [ $# -le 2 ] || die_usage "wayvibrance app list"
                 # each line arrives as "kind:pattern|vib[|r,g,b[|name]]" — just indent it
                 call appRules | sed -e 's/^/  /' | tr -d '\r' || true
                 ;;
