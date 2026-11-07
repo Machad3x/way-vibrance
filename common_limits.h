@@ -1,7 +1,7 @@
-# SPDX-FileCopyrightText: 2026 machadex
-# SPDX-License-Identifier: GPL-2.0-or-later
-#
-# Common limits for Way Vibrance.
+// SPDX-FileCopyrightText: 2026 machadex
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Common limits for Way Vibrance.
 
 #pragma once
 
