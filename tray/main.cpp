@@ -58,6 +58,7 @@
 #include <KAboutData>
 #include <KConfigGroup>
 #include <KDBusService>
+#include "common_limits.h"
 #include <KGlobalAccel>
 #include <KGlobalShortcutInfo>
 #include <KSharedConfig>
@@ -79,8 +80,6 @@ static constexpr int kRgbMaxPercent = 200;
 // so a hostile emitter cannot inflate the UI list or the parsed fields.
 static constexpr int kMaxProfiles = 64;
 static constexpr int kRefreshTimeoutMs = 3000;
-static constexpr int kMaxPatternLength = 128;
-static constexpr int kMaxNameLength = 64;
 
 /** Finite + within the effect's accepted range; the UI speaks percents. */
 static bool saneFactor(const QVariant &v, double &out)

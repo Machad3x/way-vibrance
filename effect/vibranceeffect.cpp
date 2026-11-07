@@ -6,6 +6,7 @@
 
 #include "globmatch_p.h"
 #include "vibranceeffect.h"
+#include "common_limits.h"
 
 #include <window.h>
 

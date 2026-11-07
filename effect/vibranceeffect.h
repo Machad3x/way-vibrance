@@ -12,6 +12,7 @@
 
 #include <QDBusAbstractAdaptor>
 #include <QRegion>
+#include "common_limits.h"
 #include <QVector3D>
 
 #include <memory>
