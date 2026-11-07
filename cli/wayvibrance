@@ -28,7 +28,8 @@ Usage:
   wayvibrance app list               per-app profiles
   wayvibrance app set <pattern> <vib> [r g b]
                                      add/update a profile (e.g. firefox 1.5,
-                                     or with gains: firefox 1.5 1.2 1 0.9)
+                                     or with gains: firefox 1.5 1.2 1 0.9).
+                                     Quote patterns/names that contain spaces.
   wayvibrance app del <pattern>      remove one
   wayvibrance app name <pattern> <name>
                                      cosmetic label in the tray list (empty clears)
@@ -123,9 +124,9 @@ case "$cmd" in
         ;;
     rgb)
         ensure_loaded
-        if [ "${2:-}" = "reset" ]; then
+        if [ "${2:-}" = "reset" ] && [ $# -eq 2 ]; then
             call setRGBGains 1 1 1
-        elif [ $# -ge 4 ]; then
+        elif [ $# -eq 4 ]; then
             call setRGBGains "$2" "$3" "$4"
         else
             echo "usage: wayvibrance rgb <red> <green> <blue>  (e.g. 1.2 1 0.9) or 'wayvibrance rgb reset'  (see: wayvibrance --help)" >&2
@@ -144,30 +145,34 @@ case "$cmd" in
                 call appRules | sed -e 's/^/  /' | tr -d '\r' || true
                 ;;
             set)
-                if [ $# -ge 7 ]; then
-                    # Supports patterns with spaces by joining all args
+                # Patterns containing spaces must be quoted (one argument).
+                if [ $# -eq 7 ]; then
                     PATTERN="$3"
                     VIBRANCE="$4"
                     RED="$5"
                     GREEN="$6"
                     BLUE="$7"
                     call setAppRuleFull "$PATTERN" "$VIBRANCE" "$RED" "$GREEN" "$BLUE"
-                elif [ $# -ge 4 ]; then
+                elif [ $# -eq 4 ]; then
                     PATTERN="$3"
                     VIBRANCE="$4"
                     call setAppRule "$PATTERN" "$VIBRANCE"
                 else
-                    echo "usage: wayvibrance app set <pattern> <vibrance> [red green blue]  (see: wayvibrance --help)" >&2
+                    echo "usage: wayvibrance app set '<pattern>' <vibrance> [r g b]  (quote patterns with spaces)" >&2
                     exit 1
                 fi
-                ;; 
+                ;;
             del)
-                [ $# -ge 3 ] || { echo "usage: wayvibrance app del <pattern>" >&2; exit 1; }
+                [ $# -eq 3 ] || { echo "usage: wayvibrance app del '<pattern>'  (quote patterns with spaces)" >&2; exit 1; }
                 call removeAppRule "$3"
                 ;;
             name)
-                [ $# -ge 3 ] || { echo "usage: wayvibrance app name <pattern> <name>  (empty clears)" >&2; exit 1; }
-                call setAppRuleName "$3" "${4:-}"
+                if [ $# -eq 3 ] || [ $# -eq 4 ]; then
+                    call setAppRuleName "$3" "${4:-}"
+                else
+                    echo "usage: wayvibrance app name '<pattern>' '<name>'  (empty clears; quote names with spaces)" >&2
+                    exit 1
+                fi
                 ;;
             reset)
                 call clearAppRules
@@ -183,6 +188,7 @@ case "$cmd" in
         ;;
     *)
         # positional: a numeric value, e.g. `wayvibrance 1.25`
+        [ $# -eq 1 ] || { echo "usage: wayvibrance [<value> | on | off | toggle | rgb | primary | app ...]  (see: wayvibrance --help)" >&2; exit 1; }
         ensure_loaded
         call setVibrance "$cmd"
         ;;
