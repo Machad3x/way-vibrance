@@ -134,6 +134,12 @@ VibranceEffect::VibranceEffect()
 
 VibranceEffect::~VibranceEffect()
 {
+    // The debounce timer dies with the effect: flush a change made within
+    // the last 500 ms instead of dropping it on unload/logout.
+    if (m_persistTimer && m_persistTimer->isActive()) {
+        m_persistTimer->stop();
+        persist();
+    }
     if (m_dbusRegistered) {
         QDBusConnection bus = QDBusConnection::sessionBus();
         bus.unregisterObject(QString::fromLatin1(s_dbusObjectPath));
