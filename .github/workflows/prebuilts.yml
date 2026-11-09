@@ -45,8 +45,13 @@ jobs:
       - name: Build and run matcher tests
         # Standalone: the harness needs only Qt6::Core + the private header
         # (a full cmake configure here would demand KWin packages).
+        # -I. mirrors ${CMAKE_SOURCE_DIR} in tests/CMakeLists.txt: since the
+        # limits moved to the repo-root common_limits.h, globmatch_p.h
+        # includes it and a bare -Ieffect no longer resolves. Keep the CI
+        # include path identical to the CMake target, or CI diverges from
+        # the build users actually install.
         run: |
-          g++ -O1 -std=c++17 -fPIC tests/glob_match_test.cpp -Ieffect \
+          g++ -O1 -std=c++17 -fPIC tests/glob_match_test.cpp -Ieffect -I. \
             $(pkg-config --cflags --libs Qt6Core) -o glob_match_test
           ./glob_match_test
       - name: Build and run reset-button test
