@@ -128,6 +128,14 @@ jobs:
       - name: Build + install-verify all supported releases
         run: CONTAINER_TOOL=docker ./scripts/package.sh
 
+      - name: Upload packaging logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-logs-${{ steps.rel.outputs.tag }}
+          path: dist/logs/
+          if-no-files-found: ignore
+
       - name: List artifacts
         run: ls -la dist/
 
