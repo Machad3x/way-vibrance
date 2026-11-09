@@ -268,7 +268,10 @@ private:
     bool m_shaderGaveUp = false; // terminal: no more compile attempts this load
     int m_shaderFailedAttempts = 0;
     QElapsedTimer m_shaderRetryTimer; // rate-limits retries from the paint path
-    QElapsedTimer m_variantRetryTimer; // same, for per-profile variant compiles
+    QElapsedTimer m_variantRetryTimer; // rate-limits retries from the paint path
+    // Per gain-set compile failures: give up on a set after kMaxShaderAttempts
+    // instead of retrying it forever from every frame that needs it.
+    QHash<QString, int> m_variantFailures;
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;
     std::unique_ptr<GLShader> m_shader;
