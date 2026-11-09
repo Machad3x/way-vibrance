@@ -13,7 +13,7 @@ visualmente equivalente à vibrância de driver.
 
 | Janela principal | Editor de perfil | Menu da bandeja |
 |---|---|---|
-| ![Janela principal](docs/screenshots/app.png) | ![Editor de perfil](docs/screenshots/profiles.png) | ![Menu da bandeja](docs/screenshots/tray.png) |
+| ![Janela principal](docs/screenshots/app.jpg) | ![Editor de perfil](docs/screenshots/profiles.jpg) | ![Menu da bandeja](docs/screenshots/tray.png) |
 
 ## O que você recebe
 

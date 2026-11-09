@@ -348,4 +348,4 @@ verificação de atualizações disparada pelo usuário (ver
 
 | Janela principal | Editor de perfil | Menu da bandeja |
 |---|---|---|
-| ![Janela principal](screenshots/app.png) | ![Editor de perfil](screenshots/profiles.png) | ![Menu da bandeja](screenshots/tray.png) |
+| ![Janela principal](screenshots/app.jpg) | ![Editor de perfil](screenshots/profiles.jpg) | ![Menu da bandeja](screenshots/tray.png) |

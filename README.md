@@ -13,7 +13,7 @@ equivalent to driver vibrance.
 
 | Main window | Profile editor | Tray menu |
 |---|---|---|
-| ![Main window](docs/screenshots/app.png) | ![Profile editor](docs/screenshots/profiles.png) | ![Tray menu](docs/screenshots/tray.png) |
+| ![Main window](docs/screenshots/app.jpg) | ![Profile editor](docs/screenshots/profiles.jpg) | ![Tray menu](docs/screenshots/tray.png) |
 
 ## What you get
 

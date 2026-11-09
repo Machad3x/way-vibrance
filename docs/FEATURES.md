@@ -341,4 +341,4 @@ update check (see [Privacy & footprint](#privacy--footprint)).
 
 | Main window | Profile editor | Tray menu |
 |---|---|---|
-| ![Main window](screenshots/app.png) | ![Profile editor](screenshots/profiles.png) | ![Tray menu](screenshots/tray.png) |
+| ![Main window](screenshots/app.jpg) | ![Profile editor](screenshots/profiles.jpg) | ![Tray menu](screenshots/tray.png) |
