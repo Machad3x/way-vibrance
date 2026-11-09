@@ -408,16 +408,6 @@ public:
         m_rgbTimer.start();
     }
 
-    /** Creates or updates a per-app profile; the effect echoes the full list. */
-    void requestSetAppRule(const QString &prefixedPattern, double vibrance)
-    {
-        if (m_attached) {
-            send(QStringLiteral("setAppRule"), {prefixedPattern, vibrance});
-            // Do not depend on the echo alone: pull the authoritative state.
-            QTimer::singleShot(120, this, &VibranceController::refreshState);
-        }
-    }
-
     void requestSetAppRuleFull(const QString &prefixedPattern, double vibrance,
                                double red, double green, double blue)
     {
@@ -684,7 +674,7 @@ private Q_SLOTS:
             m_primaryOutputSupported = !isError;
             Q_EMIT primaryOutputStateFromEffect(m_primaryOutputSupported,
                                                 m_primaryOutputSupported
-                                                    ? args.value(0).toString().left(kMaxPatternLength)
+                                                    ? args.value(0).toString().left(kMaxOutputNameLength)
                                                     : QString());
         } else if (kind == QLatin1String("redGain") || kind == QLatin1String("greenGain")
                    || kind == QLatin1String("blueGain")) {
@@ -1262,8 +1252,8 @@ private:
 
     QComboBox *m_kind = nullptr;
     QLineEdit *m_pattern = nullptr;
-    QLineEdit *m_name = nullptr;
     QGroupBox *m_gainsBox = nullptr;
+    QLineEdit *m_name = nullptr;
     QButtonGroup *m_presetGroup = nullptr;
     QSlider *m_vibSlider = nullptr;
     QLabel *m_vibValue = nullptr;
@@ -1783,7 +1773,7 @@ public:
         });
         connect(controller, &VibranceController::vibranceFromEffect, this, [this](double value) {
             m_updatingFromEffect = true;
-            setPercent(int(value * 100.0));
+            setPercent(static_cast<int>(qRound(value * 100.0)));
             m_updatingFromEffect = false;
         });
         connect(controller, &VibranceController::enabledFromEffect, this, [this](bool enabled) {
@@ -1793,22 +1783,25 @@ public:
         });
         connect(controller, &VibranceController::rgbGainsFromEffect, this, [this](double red, double green, double blue) {
             m_updatingRGB = true;
-            setGains(int(red * 100.0), int(green * 100.0), int(blue * 100.0));
+            setGains(static_cast<int>(qRound(red * 100.0)),
+                     static_cast<int>(qRound(green * 100.0)),
+                     static_cast<int>(qRound(blue * 100.0)));
             m_updatingRGB = false;
         });
         connect(controller, &VibranceController::availableChanged, this, [this](bool available) {
             m_statusLabel->setText(available ? tr("Connected to the Way Vibrance effect.")
                                              : tr("The effect is not loaded in KWin."));
-            m_slider->setEnabled(available);
+            setEffectControlsEnabled(available);
             m_loadButton->setVisible(!available);
         });
 
         m_controller = controller;
-        m_statusLabel->setText(controller->effectAvailable()
+        const bool available = controller->effectAvailable();
+        m_statusLabel->setText(available
                                   ? tr("Connected to the Way Vibrance effect.")
                                   : tr("The effect is not loaded in KWin."));
-        m_slider->setEnabled(controller->effectAvailable());
-        m_loadButton->setVisible(!controller->effectAvailable());
+        setEffectControlsEnabled(available);
+        m_loadButton->setVisible(!available);
 
         // Sync every control with the effect's real state now that all of
         // our connections exist (earlier state pushes may have gone unheard).
@@ -1836,6 +1829,18 @@ private:
             return;
         }
         m_profileStack->setCurrentIndex(m_profileList->count() == 0 ? 0 : 1);
+    }
+
+    void setEffectControlsEnabled(bool enabled)
+    {
+        m_slider->setEnabled(enabled);
+        m_enabledCheck->setEnabled(enabled);
+        m_redSlider->setEnabled(enabled);
+        m_greenSlider->setEnabled(enabled);
+        m_blueSlider->setEnabled(enabled);
+        m_primaryOnlyCheck->setEnabled(enabled);
+        m_primaryOutputRow->setEnabled(enabled && m_primaryOnlyCheck->isChecked());
+        m_profileGroup->setEnabled(enabled);
     }
 
     void setPercent(int percent)
@@ -2106,6 +2111,9 @@ int main(int argc, char *argv[])
     enabledAction->setChecked(true);
     QObject::connect(enabledAction, &QAction::toggled, &controller, &VibranceController::requestVibranceEnabled);
     QObject::connect(&controller, &VibranceController::enabledFromEffect, enabledAction, &QAction::setChecked);
+    QObject::connect(&controller, &VibranceController::availableChanged, enabledAction,
+                     [enabledAction](bool available) { enabledAction->setEnabled(available); });
+    enabledAction->setEnabled(controller.effectAvailable());
 
     menu->addSeparator();
     for (int percent : wvseg::kPresetValues) {
@@ -2131,7 +2139,8 @@ int main(int argc, char *argv[])
     QObject::connect(quitAction, &QAction::triggered, &app, &QApplication::quit);
 
     QObject::connect(&controller, &VibranceController::vibranceFromEffect, icon, [icon](double value) {
-        icon->setToolTip(QStringLiteral("Way Vibrance — %1%").arg(int(value * 100.0)));
+        icon->setToolTip(QStringLiteral("Way Vibrance — %1%")
+                             .arg(static_cast<int>(qRound(value * 100.0))));
     });
 
     icon->setContextMenu(menu);
