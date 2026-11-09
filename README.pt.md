@@ -114,20 +114,21 @@ prebuilt/CI, OSD — veja **[docs/ROADMAP.pt.md](docs/ROADMAP.pt.md)**.
 
 ## Estado
 
-Funcional e em uso diário; release atual **v0.6.3** — a linha de hardening concluída (rodadas 2–10 da
-auditoria estática, nenhuma mudança de comportamento): confiança D-Bus
-ancorada no PID do compositor e revalidada a cada troca de dono, tetos de
-string em todos os pontos de entrada incluindo as identidades de janela, um
-tray totalmente assíncrono e à prova de congelamento, matching de glob
-orçado com teste fuzz versionado no CI e desinstalador à prova de manifesto
-adulterado e de symlinks. Suporte
-multi-distro de build (Arch/Fedora/Debian/Ubuntu, sem nunca atualizar o
-sistema),
-**pacotes prebuilt** por release compilados e verificados por instalação em
-matrizes de contêineres (anexados às releases automaticamente pela CI),
-seleção real da saída do monitor primário e documentação totalmente
-bilíngue. A base da v0.4.0/v0.5.0 (perfis por app, seletor de monitor)
-permanece.
+Funcional e em uso diário; release atual **v0.6.3** — redesign da bandeja e conclusão da linha de
+hardening: confiança D-Bus ancorada no PID do compositor e revalidada a cada
+troca de dono, tetos de string em todos os pontos de entrada incluindo as
+identidades de janela, tray totalmente assíncrono e à prova de congelamento,
+matching de glob orçado com teste fuzz versionado no CI, tentativas de
+compilação de shader e cache limitados, persistência atômica dos perfis e
+desinstalador à prova de manifesto adulterado e de symlinks. A bandeja agora
+traz layout em cartões derivado do tema, sliders com cores por canal, presets
+segmentados, botões de reset por slider e chaves que seguem a paleta. O CLI é
+distribuído e instalado como `wayvibrance`; configs, perfis por app e hotkeys
+existentes são preservados. Permanecem o suporte multi-distro de build
+(Arch/Fedora/Debian/Ubuntu, sem nunca atualizar o sistema), os **pacotes
+prebuilt** por release compilados e verificados por instalação em matrizes de
+contêineres (anexados automaticamente pela CI), a seleção real da saída do
+monitor primário e a documentação totalmente bilíngue.
 
 ## Desenvolvimento
 

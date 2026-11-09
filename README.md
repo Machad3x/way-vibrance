@@ -114,18 +114,19 @@ packages/CI, OSD — see **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 ## Status
 
-Functional and in daily use; current release **v0.6.3** — the completed
-hardening line (static-audit rounds 2–10, no behaviour change): D-Bus trust
-anchored to the compositor PID and revalidated on owner changes, string
-ceilings at every entry point including window identities, a fully async
-non-freezable tray, budgeted glob matching with a versioned fuzz test in CI,
-a bounded shader cache, and a tamper/symlink-proof uninstaller. Multi-distro
-build support
-(Arch/Fedora/Debian/Ubuntu, never updating your system),
-per-release **prebuilt packages** built and install-verified in container
-matrices (attached to releases automatically by CI), real primary-monitor
-output picking, and fully bilingual docs. The foundation from v0.4.0/v0.5.0
-(per-app profiles, monitor picker) is unchanged.
+Functional and in daily use; current release **v0.6.3** — redesign plus the
+completed hardening line: D-Bus trust anchored to the compositor PID and
+revalidated on owner changes, string ceilings at every entry point including
+window identities, a fully async non-freezable tray, budgeted glob matching
+with a versioned fuzz test in CI, bounded shader retries/cache, atomic profile
+persistence, and a tamper/symlink-proof uninstaller. The tray now has a
+theme-derived card layout, channel-coloured sliders, segmented presets,
+per-slider reset buttons and palette-aware switches. The CLI is shipped and
+installed as `wayvibrance`; existing configs, per-app profiles and hotkeys
+carry over untouched. Multi-distro build support (Arch/Fedora/Debian/Ubuntu,
+never updating your system), per-release **prebuilt packages** built and
+install-verified in container matrices (attached to releases automatically by
+CI), real primary-monitor output picking, and fully bilingual docs remain.
 
 ## Development
 
