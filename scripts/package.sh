@@ -102,9 +102,20 @@ h = ctypes.CDLL(sys.argv[2])          # resolves every symbol now
 print("dlopen-ok:", bool(h))
 PY
 echo "-- tray boot (offscreen, dbus session, 3s) --"
-DBUSRUN="$(command -v dbus-run-session || echo /usr/sbin/dbus-run-session)"
+# dbus-run-session lives in different packages across distro releases
+# (Fedora 44: dbus-daemon; Debian/Ubuntu: dbus). Prefer it, but fall back to
+# a private dbus-daemon so the probe never fails with 127 because of a
+# packaging split we did not anticipate.
+DBUSRUN="$(command -v dbus-run-session || true)"
+DBUS_DAEMON="$(command -v dbus-daemon || true)"
 mkdir -p /tmp/xdg && chmod 700 /tmp/xdg
-XDG_RUNTIME_DIR=/tmp/xdg "$DBUSRUN" -- env QT_QPA_PLATFORM=offscreen timeout 3 wayvibrance-tray >/tmp/tray.out 2>&1 &
+if [ -n "$DBUSRUN" ]; then
+    XDG_RUNTIME_DIR=/tmp/xdg "$DBUSRUN" -- env QT_QPA_PLATFORM=offscreen timeout 3 wayvibrance-tray >/tmp/tray.out 2>&1 &
+else
+    [ -n "$DBUS_DAEMON" ] || { echo "FAIL: neither dbus-run-session nor dbus-daemon is installed"; exit 1; }
+    export DBUS_SESSION_BUS_ADDRESS="$("$DBUS_DAEMON" --session --fork --print-address=1)"
+    XDG_RUNTIME_DIR=/tmp/xdg env QT_QPA_PLATFORM=offscreen timeout 3 wayvibrance-tray >/tmp/tray.out 2>&1 &
+fi
 TRAY=$!
 sleep 3.5
 if kill -0 $TRAY 2>/dev/null; then kill -9 $TRAY; echo "tray-alive-ok";
@@ -152,7 +163,7 @@ pkg_fedora() { # $1 = release number
         -e PM=rpm \
         "docker.io/library/fedora:$rel" bash -c "
         set -e
-        dnf -q -y install /dist/$rpm_name python3 dbus dbus-tools >/tmp/i.log 2>&1 || { tail -15 /tmp/i.log; exit 1; }
+        dnf -q -y install /dist/$rpm_name python3 dbus dbus-daemon dbus-tools >/tmp/i.log 2>&1 || { tail -15 /tmp/i.log; exit 1; }
         bash /work/vout/verify.sh 2>&1 | tee /work/vout/verify.out | tail -20
         grep -q VERIFY-OK /work/vout/verify.out
     " > "$LOGDIR/$target.verify.log" 2>&1 \
@@ -190,7 +201,7 @@ pkg_deb() { # $1=target $2=image $3=label $4=suffix
         "docker.io/library/$img" bash -c "
         set -e
         apt-get -qq update >/dev/null 2>&1 || true
-        apt-get -qq install -y --no-install-recommends python3 >/tmp/py.log 2>&1 || true
+        apt-get -qq install -y --no-install-recommends python3 dbus >/tmp/py.log 2>&1 || true
         apt-get install -y --no-install-recommends \"/dist/$deb_name\" >/tmp/i.log 2>&1 || { tail -15 /tmp/i.log; exit 1; }
         bash /work/vout/verify.sh 2>&1 | tee /work/vout/verify.out | tail -20
         grep -q VERIFY-OK /work/vout/verify.out
@@ -260,6 +271,8 @@ dispatch() { # $1 = target
 TARGETS=("$@"); ((${#TARGETS[@]})) || TARGETS=("${DEFAULT_TARGETS[@]}")
 echo "==> ${#TARGETS[@]} targets: build+verify, $JOBS at a time ($JBERS CPUs each, $NCPU total)"
 PIDS=()
+FAILED="$WORKROOT/failed"
+: > "$FAILED"
 for t in "${TARGETS[@]}"; do
     while (( ${#PIDS[@]} >= JOBS )); do
         alive=()
@@ -268,13 +281,22 @@ for t in "${TARGETS[@]}"; do
         (( ${#PIDS[@]} < JOBS )) && break
         sleep 1
     done
-    dispatch "$t" &
+    # Record failures in a file: the pool above drops finished PIDs from
+    # PIDS before they can be waited on, so their exit status would be lost
+    # (that bug let failed verifies turn the CI job green). The marker is
+    # written by the child itself and remains authoritative.
+    ( dispatch "$t" || echo "$t" >> "$FAILED" ) &
     PIDS+=($!)
 done
-RC=0
-for p in "${PIDS[@]}"; do wait "$p" || RC=1; done
+# Reap every remaining child; earlier ones already recorded their status.
+wait || true
 
 echo
 echo "==> Artifacts in dist/:"
 ls -la "$DIST" | grep -vE "^total|^d.* logs$"
-exit $RC
+if [ -s "$FAILED" ]; then
+    echo
+    echo "==> FAILED targets:" >&2
+    sed 's/^/    - /' "$FAILED" >&2
+    exit 1
+fi
