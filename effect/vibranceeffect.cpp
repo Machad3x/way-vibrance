@@ -322,7 +322,7 @@ void VibranceEffect::reloadConfig()
     m_primaryOnly = primaryOnly;
     m_primaryOutputName = primaryOutput.size() > kMaxOutputNameLength
         ? primaryOutput.left(kMaxOutputNameLength)
-        : primaryOutput;
+        : primaryOutput.trimmed();
     m_rgbGains = clampGains(red, green, blue);
 
     m_rules.clear();
@@ -1060,6 +1060,13 @@ bool VibranceEffect::primaryOnly() const
 
 void VibranceEffect::setRGBGains(qreal red, qreal green, qreal blue)
 {
+    // Unlike configuration loading, a live D-Bus request must be rejected as
+    // a whole when any channel is non-finite; silently replacing one channel
+    // with neutral would make a malformed request appear successful.
+    if (!std::isfinite(red) || !std::isfinite(green) || !std::isfinite(blue)) {
+        qWarning() << "Way Vibrance: ignoring non-finite RGB gains";
+        return;
+    }
     const QVector3D gains = clampGains(red, green, blue);
     if (qFuzzyCompare(gains, m_rgbGains)) {
         return;
