@@ -101,9 +101,13 @@ ensure_loaded() {
     [ -n "$EFFECTS_SVC" ] || { echo "could not reach KWin over D-Bus" >&2; exit 1; }
     if ! "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".isEffectLoaded "$EFFECT_ID" | grep -qi true; then
         "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".loadEffect "$EFFECT_ID" >/dev/null
-        # give the effect a moment to register its D-Bus service
+        # Give the effect a moment to register its D-Bus service. Verify the
+        # owner before every probe: an untrusted peer must never receive even
+        # a harmless-looking method call through the well-known name.
         for _ in 1 2 3 4 5; do
-            if call vibrance >/dev/null 2>&1; then break; fi
+            if verify_effect_owner >/dev/null 2>&1 && call vibrance >/dev/null 2>&1; then
+                break
+            fi
             sleep 0.1
         done
     fi
@@ -124,18 +128,6 @@ for svc in org.kde.KWin org.kde.kwin.Effects; do
         break
     fi
 done
-
-ensure_loaded() {
-    [ -n "$EFFECTS_SVC" ] || { echo "could not reach KWin over D-Bus" >&2; exit 1; }
-    if ! "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".isEffectLoaded "$EFFECT_ID" | grep -qi true; then
-        "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".loadEffect "$EFFECT_ID" >/dev/null
-        # give the effect a moment to register its D-Bus service
-        for _ in 1 2 3 4 5; do
-            call vibrance >/dev/null 2>&1 && return
-            sleep 0.1
-        done
-    fi
-}
 
 cmd="${1:-get}"
 case "$cmd" in
