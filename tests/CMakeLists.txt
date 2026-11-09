@@ -42,6 +42,13 @@ add_test(NAME switch_widget_test COMMAND switch_widget_test)
 set_tests_properties(switch_widget_test PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# Versioned guarantee for the update checker's ordering: a tag is only
+# considered newer when it is strictly greater than the running build.
+add_executable(version_test version_test.cpp)
+target_link_libraries(version_test PRIVATE Qt6::Core)
+target_include_directories(version_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
+add_test(NAME version_test COMMAND version_test)
+
 # Same guarantees under a 2x device pixel ratio: the focus ring is scaled by
 # the painter and the hit/knob geometry must not assume logical pixels.
 add_test(NAME switch_widget_test_hidpi COMMAND switch_widget_test)
