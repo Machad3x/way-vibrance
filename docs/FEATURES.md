@@ -176,9 +176,12 @@ manifest nor a planted `bin ->` symlink can smuggle unrelated paths into
 
 ## Version compatibility
 
-- The tray and the CLI talk **pure D-Bus** (`org.wayvibrance` plus
-  `org.kde.kwin.Effects`), stable across Plasma 6 — they depend on no
-  specific KDE version.
+- The tray and the CLI talk **pure D-Bus**. For effect loading they probe
+  `/Effects` on both `org.kde.KWin` and `org.kde.kwin.Effects` (compatibility
+  across Plasma 6); for trust they anchor to `org.kde.KWin` only, because it is
+  the compositor-owned name guaranteed on every Plasma 6 release, while the
+  legacy `org.kde.kwin.Effects` name can be free and grabbed by any session peer.
+  So compatibility uses both names, identity trust uses one.
 - The effect plugin is compiled **against the KWin installed on your
   machine** (like every third-party KWin effect: the effects API has no
   binary compatibility guarantee between releases). The same *source*

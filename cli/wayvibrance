@@ -60,7 +60,54 @@ EFFECTS_IFACE="org.kde.kwin.Effects"
 EFFECT_ID="wayvibrance"
 
 call() {
-    "$QDBUS" "$IFACE" /Vibrance "$IFACE.$1" "${@:2}"
+    # Address the verified unique owner once known: a later name grab
+    # cannot receive our commands.
+    "$QDBUS" "${IFACE_DEST:-$IFACE}" /Vibrance "$IFACE.$1" "${@:2}"
+}
+
+# Trust boundary (same as the tray): any session peer can grab the
+# org.wayvibrance well-known name before the effect registers. Anchor to the
+# process instead: the owner must be the same connection that owns
+# org.kde.KWin — owned unconditionally by the compositor on every KWin of
+# Plasma 6 (new or old), so nothing is pinned to a Plasma release. The legacy
+# org.kde.kwin.Effects name is NOT an anchor: it is usually free, so a peer
+# could own both it and org.wayvibrance and pass a naive PID comparison.
+verify_effect_owner() {
+    local owner pid kwin_owner kwin_pid
+    owner="$("$QDBUS" org.freedesktop.DBus /org/freedesktop/DBus \
+        org.freedesktop.DBus.GetNameOwner "$IFACE" 2>/dev/null)" || true
+    if [ -z "$owner" ]; then
+        echo "the Way Vibrance effect is not on the bus (try: wayvibrance load)" >&2
+        exit 1
+    fi
+    pid="$("$QDBUS" org.freedesktop.DBus /org/freedesktop/DBus \
+        org.freedesktop.DBus.GetConnectionUnixProcessID "$owner" 2>/dev/null)" || true
+    kwin_owner="$("$QDBUS" org.freedesktop.DBus /org/freedesktop/DBus \
+        org.freedesktop.DBus.GetNameOwner org.kde.KWin 2>/dev/null)" || true
+    if [ -z "$kwin_owner" ]; then
+        echo "cannot identify the compositor (org.kde.KWin has no owner)" >&2
+        exit 1
+    fi
+    kwin_pid="$("$QDBUS" org.freedesktop.DBus /org/freedesktop/DBus \
+        org.freedesktop.DBus.GetConnectionUnixProcessID "$kwin_owner" 2>/dev/null)" || true
+    if [ -z "$pid" ] || [ "$pid" != "$kwin_pid" ]; then
+        echo "refusing: org.wayvibrance is owned by a non-compositor process" >&2
+        exit 1
+    fi
+    IFACE_DEST="$owner"
+}
+
+ensure_loaded() {
+    [ -n "$EFFECTS_SVC" ] || { echo "could not reach KWin over D-Bus" >&2; exit 1; }
+    if ! "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".isEffectLoaded "$EFFECT_ID" | grep -qi true; then
+        "$QDBUS" "$EFFECTS_SVC" /Effects "$EFFECTS_IFACE".loadEffect "$EFFECT_ID" >/dev/null
+        # give the effect a moment to register its D-Bus service
+        for _ in 1 2 3 4 5; do
+            if call vibrance >/dev/null 2>&1; then break; fi
+            sleep 0.1
+        done
+    fi
+    verify_effect_owner
 }
 
 die_usage() {

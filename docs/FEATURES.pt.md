@@ -182,9 +182,12 @@ Instalações via pacote se desfazem pelo gerenciador de pacotes.
 
 ## Compatibilidade de versão
 
-- Tray e CLI falam **D-Bus puro** (`org.wayvibrance` +
-  `org.kde.kwin.Effects`), estável em todo Plasma 6 — não dependem de
-  nenhuma versão específica do KDE.
+- Tray e CLI falam **D-Bus puro**. Para carregar o efeito eles sondam `/Effects` tanto
+  em `org.kde.KWin` quanto em `org.kde.kwin.Effects` (compatibilidade em todo Plasma 6);
+  para confiança ancoram só em `org.kde.KWin`, o nome que o compositor garante
+  possuir em todo release do Plasma 6 — o legado `org.kde.kwin.Effects` pode estar
+  livre para qualquer processo da sessão sequestrar. Compatibilidade usa os dois nomes;
+  identidade confia em um só.
 - O plugin do efeito é compilado **contra o KWin instalado na máquina**
   (como todo efeito de terceiros: a API de efeitos não tem garantia de
   compatibilidade binária entre releases). O mesmo *fonte* compila em KWin

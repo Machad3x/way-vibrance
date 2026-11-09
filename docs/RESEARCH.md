@@ -154,8 +154,15 @@ environment: **CachyOS, Plasma 6.3.1, KWin 6.8.2, Qt 6.12, Wayland session**
   behavioral: `supported()` checks OpenGL compositing at runtime, and a
   floor `#error` requires just `KWIN_EFFECT_API_VERSION_MINOR >= 236` (what
   the API has exposed since KWin 6.0).
-- Tray and CLI use **D-Bus only** (`org.wayvibrance`,
-  `org.kde.kwin.Effects`) — stable across all of Plasma 6, zero pins.
+- Tray, CLI and the effect's own `org.wayvibrance` service all anchor trust to the
+  **compositor process** via `org.kde.KWin` ownership — the only D-Bus name the
+  compositor owns unconditionally on every Plasma 6 release (new or old). The PID
+  is the identity: a session peer can grab any well-known name first, swap the
+  owner, then spoof the UI by sending itself valid-looking D-Bus replies. Anchoring
+  to the name would let that peer pass a naive `GetNameOwner` check; anchoring to
+  the process rejects it before any method reaches the UI. Trust is re-verified on
+  every ownership swap in the tray, and the same check runs inside the CLI's
+  `verify_effect_owner()` so it stays consistent with the app.
 - The plugin is compiled against the installed KWin (`find_package(KWin
   REQUIRED)` with no version ceiling). The public API we use
   (`WindowPaintData::multiplySaturation`, `drawWindow`,

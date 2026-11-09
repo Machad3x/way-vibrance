@@ -808,6 +808,10 @@ private:
         if (!ownerIsCompositor(m_serviceOwner)) {
             qWarning().noquote() << "Way Vibrance: org.wayvibrance is owned by a"
                                  << "non-compositor process; ignoring it";
+            // Do not keep a rejected identity: if it lingers, a later swap
+            // back to the same non-compositor value would compare equal and
+            // skip the retry forever.
+            m_serviceOwner.clear();
             return;
         }
         // No QDBusInterface here on purpose: its constructor introspects the
