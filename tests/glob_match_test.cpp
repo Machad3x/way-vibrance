@@ -205,14 +205,16 @@ int main()
         // ids = 128 walks) sharing one kResolveStepBudget must stop exactly
         // at the ceiling: each walk obeys the per-call cap, the shared one
         // refuses anything past it, final budget cannot go below -1.
+        // Walk count mirrors the effect's caps (kMaxAppRules x two ids).
+        constexpr int kWalks = 64 * 2;
         int agg = kResolveStepBudget;
-        for (int i = 0; i < kMaxResolveWalks; ++i) {
+        for (int i = 0; i < kWalks; ++i) {
             globMatch(evil, evilText, &agg);
         }
         // Full walks consume until the shared budget is gone; every later
         // walk refuses at its first step (one decrement). Worst total
         // overshoot is therefore bounded by the number of walks.
-        if (agg < -kMaxResolveWalks || agg > kResolveStepBudget - 30000) {
+        if (agg < -kWalks || agg > kResolveStepBudget - 30000) {
             fprintf(stderr, "BUDGET-FAIL aggregate out of sane band (%d left)\n", agg);
             ++s_mismatch;
         }

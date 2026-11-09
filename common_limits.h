@@ -21,5 +21,4 @@ constexpr int kGlobStepBudget = kMaxPatternLength * kMaxWindowIdentityLength + 4
 constexpr int kMaxShaderVariants = 72;
 constexpr float kShaderNearestMaxDelta = 0.02f;
 constexpr int kMaxAppRules = 64;
-constexpr int kMaxResolveWalks = 64 * 2;
 constexpr int kResolveStepBudget = 1'000'000;
