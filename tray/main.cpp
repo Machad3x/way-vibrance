@@ -1368,10 +1368,17 @@ public:
         wvseg::syncPresetGroup(m_presetGroup, m_slider->value());
         outerLayout->addWidget(vibranceGroup);
 
+        // Modern UI refinements: consistent margins and spacing
+        outerLayout->setContentsMargins(12, 12, 12, 12);
+        outerLayout->setSpacing(16);
+
         // Per-channel RGB gains (like the driver's color page). Percent
         // values map to gain multipliers (100% = neutral 1.0).
         auto *rgbGroup = new QGroupBox(tr("Channel gains (RGB)"), central);
+        // Flat & Airy: removing the group box border, adding consistent radius for modern UI
+        rgbGroup->setStyleSheet(QStringLiteral("QGroupBox { border: none; font-weight: bold; } QPushButton { border-radius: 4px; }"));
         auto *rgbLayout = new QVBoxLayout(rgbGroup);
+        rgbLayout->setContentsMargins(0, 8, 0, 0);
         rgbLayout->setSpacing(6);
         struct ChannelSpec
         {
@@ -1428,7 +1435,12 @@ public:
         // carry their own per-channel RGB gains. Add/edit opens its own
         // window, mirroring the global controls.
         m_profileGroup = new QGroupBox(tr("Per-app profiles"), m_sidePane);
+        // Flat & Airy: removing the group box border, adding consistent radius for modern UI
+        m_profileGroup->setStyleSheet(QStringLiteral("QGroupBox { border: none; font-weight: bold; }"));
+        // Applying border radius to buttons and inputs within to match Plasma 6 style
+        m_profileGroup->setStyleSheet(QStringLiteral("QGroupBox { border: none; font-weight: bold; } QPushButton { border-radius: 4px; } QLineEdit { border-radius: 4px; } QComboBox { border-radius: 4px; }"));
         auto *profileLayout = new QVBoxLayout(m_profileGroup);
+        profileLayout->setContentsMargins(0, 8, 0, 0);
         profileLayout->setSpacing(8);
 
         // Empty state: without a rule the pane used to be a large blank box.
@@ -1585,6 +1597,8 @@ public:
         // Configurable global hotkey (KGlobalAccel: persisted by the KDE
         // daemon, editable here and in System Settings → Shortcuts).
         auto *hotkeyGroup = new QGroupBox(tr("Global hotkey"), central);
+        // Flat & Airy: removing the group box border, adding consistent radius for modern UI
+        hotkeyGroup->setStyleSheet(QStringLiteral("QGroupBox { border: none; font-weight: bold; } QPushButton { border-radius: 4px; } QKeySequenceEdit { border-radius: 4px; }"));
         auto *hotkeyLayout = new QVBoxLayout(hotkeyGroup);
         hotkeyLayout->setSpacing(8);
         auto *hotkeyRow = new QHBoxLayout();
@@ -1673,6 +1687,8 @@ public:
         // switch subclass keeps the QCheckBox semantics (role, Space), so
         // the existing toggled() wiring below is unchanged.
         auto *behaviourGroup = new QGroupBox(tr("Behaviour"), central);
+        // Flat & Airy: removing the group box border, adding consistent radius for modern UI
+        behaviourGroup->setStyleSheet(QStringLiteral("QGroupBox { border: none; font-weight: bold; } QComboBox { border-radius: 4px; }"));
         auto *behaviourLayout = new QVBoxLayout(behaviourGroup);
         // Roomier than the other cards' 6 px: switch rows are a single
         // text line tall, so 4 px read as crowded. 8 px keeps the window
