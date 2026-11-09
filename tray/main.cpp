@@ -12,6 +12,7 @@
 #include "segmented_p.h"
 #include "style_p.h"
 #include "switch_p.h"
+#include "version_p.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -31,13 +32,20 @@
 #include <QAction>
 #include <QIcon>
 #include <QHBoxLayout>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMainWindow>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPushButton>
 #include <QAbstractButton>
 #include <QButtonGroup>
@@ -49,6 +57,7 @@
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QToolButton>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <cmath>
@@ -1270,6 +1279,94 @@ private:
     bool m_appliedOnce = false;
 };
 
+// ---------------------------------------------------------------------------
+// Update checking helpers
+// ---------------------------------------------------------------------------
+
+// Version string of this build, injected by CMake (single source of truth:
+// project() VERSION in CMakeLists.txt).
+#ifndef WAVERBANCE_VERSION
+#define WAVERBANCE_VERSION "0.0.0"
+#endif
+
+/** Best-effort description of how this build was installed, used to tell the
+ *  user *where* to update (we deliberately never run a package manager on
+ *  their behalf: that is the distro's job, not the app's). */
+static QString installMethodHint()
+{
+    if (qEnvironmentVariableIsSet("FLATPAK_ID") || QFile::exists(QStringLiteral("/.flatpak-info"))) {
+        return QObject::tr("This copy is a Flatpak. Update it with "
+                           "<code>flatpak update</code> or your software center.");
+    }
+    if (qEnvironmentVariableIsSet("APPIMAGE")) {
+        return QObject::tr("This copy is an AppImage. Download the new AppImage "
+                           "from the release page below.");
+    }
+    if (qEnvironmentVariableIsSet("SNAP")) {
+        return QObject::tr("This copy is a Snap. Update it with "
+                           "<code>sudo snap refresh</code> or your software center.");
+    }
+
+    QString id;
+    QStringList idLike;
+    QFile osRelease(QStringLiteral("/etc/os-release"));
+    if (osRelease.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        const QString text = QString::fromUtf8(osRelease.readAll());
+        for (const QString &line : text.split(QLatin1Char('\n'))) {
+            if (line.startsWith(QLatin1String("ID="))) {
+                id = line.mid(3).remove(QLatin1Char('"')).trimmed();
+            } else if (line.startsWith(QLatin1String("ID_LIKE="))) {
+                idLike = line.mid(8)
+                             .remove(QLatin1Char('"'))
+                             .trimmed()
+                             .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+            }
+        }
+    }
+
+    // Match either the exact ID or a parent distro declared via ID_LIKE, so
+    // derivatives (Zorin, Kali, Nobara, …) still get the right command.
+    const auto familyIs = [&](const QStringList &names) {
+        if (names.contains(id)) {
+            return true;
+        }
+        for (const QString &parent : idLike) {
+            if (names.contains(parent)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (familyIs({QStringLiteral("arch"), QStringLiteral("manjaro"),
+                  QStringLiteral("endeavouros")})) {
+        return QObject::tr("Installed from a package. Update with your package "
+                           "manager, e.g. <code>sudo pacman -Syu</code>.");
+    }
+    if (QFile::exists(QStringLiteral("/run/ostree-booted"))) {
+        return QObject::tr("This is an rpm-ostree (Atomic) system. Update with "
+                           "<code>rpm-ostree update</code>, then reboot.");
+    }
+    if (familyIs({QStringLiteral("fedora"), QStringLiteral("rhel"),
+                  QStringLiteral("centos")})) {
+        return QObject::tr("Installed from a package. Update with "
+                           "<code>sudo dnf upgrade</code>.");
+    }
+    if (familyIs({QStringLiteral("opensuse"), QStringLiteral("suse"),
+                  QStringLiteral("sles")})
+        || id.startsWith(QLatin1String("opensuse"))) {
+        return QObject::tr("Installed from a package. Update with "
+                           "<code>sudo zypper update</code>.");
+    }
+    if (familyIs({QStringLiteral("debian"), QStringLiteral("ubuntu"),
+                  QStringLiteral("linuxmint")})) {
+        return QObject::tr("Installed from a package. Update with "
+                           "<code>sudo apt update &amp;&amp; sudo apt upgrade</code>.");
+    }
+    return QObject::tr("If this build came from a package, update it through "
+                       "your distribution's package manager.");
+}
+
 class TrayWindow : public QMainWindow
 {
     Q_OBJECT
@@ -1280,7 +1377,17 @@ public:
     {
         setWindowTitle(tr("Way Vibrance"));
 
+        // Native menu bar: one "Menu" entry with About and update checking,
+        // so both are discoverable from inside the app (the tray context
+        // menu exposes the same two actions when the window is hidden).
+        auto *appMenu = menuBar()->addMenu(tr("&Menu"));
+        appMenu->addAction(QIcon::fromTheme(QStringLiteral("help-about")),
+                           tr("About Way Vibrance"), this, &TrayWindow::showAbout);
+        appMenu->addAction(QIcon::fromTheme(QStringLiteral("system-software-update")),
+                           tr("Check for Updates…"), this, &TrayWindow::checkForUpdates);
+
         auto *central = new QWidget(this);
+
         // Two panes: the global controls on the left, the per-app profile
         // editor on the right — a distinct "section" of the app that hides
         // (and lets the window collapse back) when unsupported.
@@ -1987,6 +2094,134 @@ public:
         }
     }
 
+    void showAbout()
+    {
+        auto *dialog = new QDialog(this);
+        dialog->setWindowTitle(tr("About Way Vibrance"));
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setModal(true);
+
+        auto *layout = new QVBoxLayout(dialog);
+        layout->setSpacing(12);
+
+        auto *title = new QLabel(QStringLiteral("<b>Way Vibrance</b> %1").arg(
+                                     QStringLiteral(WAVERBANCE_VERSION)),
+                                 dialog);
+        title->setTextFormat(Qt::RichText);
+        QFont titleFont = title->font();
+        // Style sheets may define fonts in pixels (pointSizeF() == -1); only
+        // scale what actually exists so we never pass a negative size.
+        if (titleFont.pointSizeF() > 0.0) {
+            titleFont.setPointSizeF(titleFont.pointSizeF() * 1.3);
+        } else if (titleFont.pixelSize() > 0) {
+            titleFont.setPixelSize(qRound(titleFont.pixelSize() * 1.3));
+        }
+        title->setFont(titleFont);
+        layout->addWidget(title);
+
+        auto *description = new QLabel(
+            tr("System-wide vibrance and per-channel RGB control for KDE "
+               "Plasma on Wayland.<br><br>"
+               "A KWin effect plus a tray controller, talking to each other "
+               "over D-Bus for flicker-free live adjustments.<br><br>"
+               "<a href=\"https://github.com/Machad3x/way-vibrance\">"
+               "github.com/Machad3x/way-vibrance</a>"),
+            dialog);
+        description->setWordWrap(true);
+        description->setTextFormat(Qt::RichText);
+        description->setOpenExternalLinks(true);
+        layout->addWidget(description);
+
+        auto *license = new QLabel(tr("Licensed under the GPL-2.0-or-later."), dialog);
+        license->setProperty("wvHint", true);
+        layout->addWidget(license);
+
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+        connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+        layout->addWidget(buttons);
+
+        dialog->open();
+    }
+
+    void checkForUpdates()
+    {
+        const QString currentVersion = QStringLiteral(WAVERBANCE_VERSION);
+
+        auto *dialog = new QDialog(this);
+        dialog->setWindowTitle(tr("Check for Updates"));
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setModal(true);
+        dialog->setMinimumWidth(360);
+
+        auto *layout = new QVBoxLayout(dialog);
+        layout->setSpacing(10);
+
+        auto *status = new QLabel(tr("Contacting GitHub…"), dialog);
+        status->setWordWrap(true);
+        status->setTextFormat(Qt::RichText);
+        status->setOpenExternalLinks(true);
+        layout->addWidget(status);
+
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+        connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+        layout->addWidget(buttons);
+
+        // The manager is parented to the dialog, so both die together if the
+        // user closes the dialog mid-request.
+        auto *manager = new QNetworkAccessManager(dialog);
+        QNetworkRequest request(
+            QUrl(QStringLiteral("https://api.github.com/repos/Machad3x/way-vibrance/releases/latest")));
+        request.setRawHeader("User-Agent", "WayVibrance/" WAVERBANCE_VERSION);
+        request.setRawHeader("Accept", "application/vnd.github+json");
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                             QNetworkRequest::NoLessSafeRedirectPolicy);
+
+        QNetworkReply *reply = manager->get(request);
+        connect(reply, &QNetworkReply::finished, dialog, [reply, status, currentVersion]() {
+            reply->deleteLater();
+            if (reply->error() != QNetworkReply::NoError) {
+                status->setText(tr("Could not reach GitHub: %1")
+                                    .arg(reply->errorString().toHtmlEscaped()));
+                return;
+            }
+
+            QJsonParseError parseError{};
+            const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &parseError);
+            if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+                status->setText(tr("GitHub returned an unexpected response."));
+                return;
+            }
+
+            const QJsonObject release = doc.object();
+            const QString latestVersion = release.value(QLatin1String("tag_name")).toString();
+            QString releaseUrl = release.value(QLatin1String("html_url")).toString();
+            if (releaseUrl.isEmpty()) {
+                releaseUrl = QStringLiteral("https://github.com/Machad3x/way-vibrance/releases/latest");
+            }
+            if (latestVersion.isEmpty()) {
+                status->setText(tr("GitHub did not report a release tag."));
+                return;
+            }
+
+            if (wvversion::compare(latestVersion, currentVersion) <= 0) {
+                status->setText(tr("You are running the latest version (%1).")
+                                    .arg(currentVersion));
+                return;
+            }
+
+            status->setText(
+                tr("<b>A newer version is available: %1</b><br><br>"
+                   "You are running %2.<br><br>%3<br><br>"
+                   "<a href=\"%4\">Open the release page</a>")
+                    .arg(latestVersion.toHtmlEscaped(),
+                         currentVersion,
+                         installMethodHint(),
+                         releaseUrl.toHtmlEscaped()));
+        });
+
+        dialog->open();
+    }
+
 Q_SIGNALS:
     void autostartChanged(bool enabled);
 
@@ -2104,7 +2339,7 @@ int main(int argc, char *argv[])
 
     KAboutData about(QStringLiteral("org.kde.wayvibrance-tray"),
                      QStringLiteral("Way Vibrance"),
-                     QStringLiteral("0.6.3"),
+                     QStringLiteral(WAVERBANCE_VERSION),
                      QObject::tr("System-wide vibrance and per-channel RGB control for KDE Plasma on Wayland"),
                      KAboutLicense::GPL);
     about.setDesktopFileName(QStringLiteral("org.kde.wayvibrance-tray"));
@@ -2168,6 +2403,14 @@ int main(int argc, char *argv[])
         window.setAutostartChecked(enabled); // keep the window checkbox in sync
     });
     QObject::connect(&window, &TrayWindow::autostartChanged, autostartAction, &QAction::setChecked);
+
+    menu->addSeparator();
+    auto *aboutAction = menu->addAction(QIcon::fromTheme(QStringLiteral("help-about")),
+                                        QObject::tr("About Way Vibrance"));
+    QObject::connect(aboutAction, &QAction::triggered, &window, &TrayWindow::showAbout);
+    auto *updateAction = menu->addAction(QIcon::fromTheme(QStringLiteral("system-software-update")),
+                                         QObject::tr("Check for Updates…"));
+    QObject::connect(updateAction, &QAction::triggered, &window, &TrayWindow::checkForUpdates);
 
     menu->addSeparator();
     auto *quitAction = menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")), QObject::tr("Quit"));
