@@ -15,7 +15,7 @@ list(APPEND CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
 include(KDEInstallDirs)
 include(KDECMakeSettings)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui DBus Widgets OpenGL)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui DBus Widgets OpenGL Network)
 find_package(KF6Config REQUIRED)
 find_package(KF6CoreAddons REQUIRED)
 find_package(KF6DBusAddons REQUIRED)
