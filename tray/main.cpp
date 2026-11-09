@@ -2211,8 +2211,11 @@ public:
 
             status->setText(
                 tr("<b>A newer version is available: %1</b><br><br>"
-                   "You are running %2.<br><br>%3<br><br>"
-                   "<a href=\"%4\">Open the release page</a>")
+                   "You are running %2.<br><br>"
+                   "%3<br><br>"
+                   "Alternatively, download the package for your system "
+                   "from the release page:<br>"
+                   "<a href=\"%4\">%4</a>")
                     .arg(latestVersion.toHtmlEscaped(),
                          currentVersion,
                          installMethodHint(),

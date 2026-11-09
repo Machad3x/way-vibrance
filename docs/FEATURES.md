@@ -141,11 +141,13 @@ the tray icon's context menu, so they work with the window hidden):
 - **Check for Updates…** — asks `api.github.com` for the latest release tag
   and compares it with the running build (semantically, tolerating a `v`
   prefix and pre-release suffixes). When a newer tag exists, the dialog shows
-  the release page and the **correct update command for how this copy was
-  installed**: Flatpak (`flatpak update`), Snap (`snap refresh`), AppImage
-  (download the new AppImage) or the distro's package manager (`pacman`,
-  `dnf`, `zypper`, `apt`; `ID_LIKE` is honoured so derivatives match their
-  parent family).
+  the **correct update command for how this copy was installed**: Flatpak
+  (`flatpak update`), Snap (`snap refresh`), AppImage (download the new
+  AppImage) or the distro's package manager (`pacman`, `dnf`, `zypper`,
+  `apt`; `ID_LIKE` is honoured so derivatives match their parent family).
+  It also always links the **GitHub release page**, so you can grab the
+  package for your system directly when the package manager does not carry
+  the new version yet.
 
 Way Vibrance deliberately **never downloads or installs anything itself**:
 updating is the package manager's job, and the app only points you at the

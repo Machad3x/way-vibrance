@@ -147,11 +147,13 @@ A janela da bandeja tem uma entrada **Menu** com duas ações (também no menu d
 - **Verificar atualizações…** — consulta `api.github.com` pela tag da release
   mais recente e compara com a versão em execução (de forma semântica,
   tolerando prefixo `v` e sufixos de pré-release). Se existir uma tag mais
-  nova, a janela mostra a página da release e o **comando de atualização
-  correto para o modo de instalação**: Flatpak (`flatpak update`), Snap
-  (`snap refresh`), AppImage (baixe o novo AppImage) ou o gerenciador da
-  distro (`pacman`, `dnf`, `zypper`, `apt`; `ID_LIKE` é respeitado, então
-  derivados casam com a família do pai).
+  nova, a janela mostra o **comando de atualização correto para o modo de
+  instalação**: Flatpak (`flatpak update`), Snap (`snap refresh`), AppImage
+  (baixe o novo AppImage) ou o gerenciador da distro (`pacman`, `dnf`,
+  `zypper`, `apt`; `ID_LIKE` é respeitado, então derivados casam com a
+  família do pai). Também sempre exibe o link da **página de releases no
+  GitHub**, para baixar o pacote do seu sistema diretamente quando o
+  gerenciador ainda não tiver a versão nova.
 
 O Way Vibrance **nunca baixa nem instala nada sozinho**: atualizar é papel do
 gerenciador de pacotes, e o app só indica o lugar certo. A verificação é
