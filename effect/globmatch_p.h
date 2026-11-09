@@ -31,14 +31,14 @@
 // ceiling the moment any cap above is raised, so a hostile pattern can
 // never turn into unbounded work on the paint path.
 
-// Aggregate budget for one resolveWindow() pass (kResolveStepBudget,
-// kMaxResolveWalks from common_limits.h): up to 64 rules, app rules
-// scanning two identities = <=128 matcher walks. Realistic rule sets
-// consume a few thousand steps end-to-end, far below this; adversarial
-// all-worst-case sets are cut short once it is spent — every later walk
-// refuses after a single step (the loop's first check), so a pass costs
-// at most kResolveStepBudget + walks total (~1ms worst case), and only on
-// identity CHANGE, never per frame (stamp fast path runs first).
+// Aggregate budget for one resolveWindow() pass (kResolveStepBudget from
+// common_limits.h): up to 64 rules, app rules scanning two identities =
+// <=128 matcher walks. Realistic rule sets consume a few thousand steps
+// end-to-end, far below this; adversarial all-worst-case sets are cut short
+// once it is spent — every later walk refuses after a single step (the
+// loop's first check), so a pass costs at most kResolveStepBudget + walks
+// total (~1ms worst case), and only on identity CHANGE, never per frame
+// (stamp fast path runs first).
 
 /**
  * Matches a user glob against a string, anchored and case-insensitive:
@@ -57,25 +57,37 @@
  */
 inline bool globMatch(const QString &glob, const QString &text, int *stepBudget = nullptr)
 {
+    // Fold once up front instead of comparing via toCaseFolded() per character
+    // (pattern x text character comparisons otherwise); the fold is what the
+    // case-insensitive semantics require, just computed once.
+    QString globFold;
+    globFold.reserve(glob.size());
+    for (const QChar &c : glob) {
+        globFold += c.toCaseFolded();
+    }
+    QString textFold;
+    textFold.reserve(text.size());
+    for (const QChar &c : text) {
+        textFold += c.toCaseFolded();
+    }
+
     int g = 0;
     int t = 0;
     int starAt = -1;
     int resumeAt = -1;
     int steps = 0;
-    const auto sameCase = [](QChar a, QChar b) {
-        return a == b || a.toCaseFolded() == b.toCaseFolded();
-    };
-    while (t < text.size()) {
+    while (t < textFold.size()) {
         if (++steps > kGlobStepBudget || (stepBudget && --(*stepBudget) < 0)) {
             return false; // budgeted: unreachable within shipped caps (see constants)
         }
-        if (g < glob.size() && glob.at(g) == QLatin1Char('?')) {
+        if (g < globFold.size() && globFold.at(g) == QLatin1Char('?')) {
             ++g;
             ++t;
-        } else if (g < glob.size() && glob.at(g) != QLatin1Char('*') && sameCase(glob.at(g), text.at(t))) {
+        } else if (g < globFold.size() && globFold.at(g) != QLatin1Char('*')
+                   && globFold.at(g) == textFold.at(t)) {
             ++g;
             ++t;
-        } else if (g < glob.size() && glob.at(g) == QLatin1Char('*')) {
+        } else if (g < globFold.size() && globFold.at(g) == QLatin1Char('*')) {
             starAt = g++; // consume the star; let the rewind below feed it chars
             resumeAt = t;
         } else if (starAt >= 0) {
@@ -85,8 +97,8 @@ inline bool globMatch(const QString &glob, const QString &text, int *stepBudget 
             return false;
         }
     }
-    while (g < glob.size() && glob.at(g) == QLatin1Char('*')) {
+    while (g < globFold.size() && globFold.at(g) == QLatin1Char('*')) {
         ++g;
     }
-    return g == glob.size();
+    return g == globFold.size();
 }
