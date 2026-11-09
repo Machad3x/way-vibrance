@@ -10,6 +10,7 @@ compilar e usar. Voltar ao [README](../README.pt.md) ·
 - [Como funciona](#como-funciona)
 - [Perfis por aplicação (detalhes)](#perfis-por-aplicação)
 - [Hotkey & configurações de comportamento](#hotkey--configurações-de-comportamento)
+- [Menu, Sobre e verificação de atualizações](#menu-sobre-e-verificação-de-atualizações)
 - [Referência da CLI](#referência-da-cli)
 - [API D-Bus](#api-d-bus)
 - [Arquivos de configuração](#arquivos-de-configuração)
@@ -136,6 +137,27 @@ no segundo monitor mantêm o visual.
   nunca saltar (seleciona por nome de conector, ex.: `DP-1`; "Automatic" =
   primeira saída do KWin; a lista atualiza em hotplug).
 
+## Menu, Sobre e verificação de atualizações
+
+A janela da bandeja tem uma entrada **Menu** com duas ações (também no menu do
+ícone da bandeja, então funcionam com a janela oculta):
+
+- **Sobre o Way Vibrance** — uma janela pequena com o propósito do projeto, a
+  versão em execução e o link do GitHub.
+- **Verificar atualizações…** — consulta `api.github.com` pela tag da release
+  mais recente e compara com a versão em execução (de forma semântica,
+  tolerando prefixo `v` e sufixos de pré-release). Se existir uma tag mais
+  nova, a janela mostra a página da release e o **comando de atualização
+  correto para o modo de instalação**: Flatpak (`flatpak update`), Snap
+  (`snap refresh`), AppImage (baixe o novo AppImage) ou o gerenciador da
+  distro (`pacman`, `dnf`, `zypper`, `apt`; `ID_LIKE` é respeitado, então
+  derivados casam com a família do pai).
+
+O Way Vibrance **nunca baixa nem instala nada sozinho**: atualizar é papel do
+gerenciador de pacotes, e o app só indica o lugar certo. A verificação é
+manual (sem polling em segundo plano) e o único dado enviado é um
+`User-Agent` genérico.
+
 ## Referência da CLI
 
 Saída completa e autoritativa: `wayvibrance --help`. Mapa rápido:
@@ -250,7 +272,11 @@ Instalações via pacote se desfazem pelo gerenciador de pacotes.
 ## Privacidade & pegada
 
 Tudo roda em **espaço de usuário**:
-- sem daemons, sem módulos de kernel, sem rede, sem telemetria;
+- sem daemons, sem módulos de kernel, sem telemetria;
+- sem acesso à rede por padrão: a única requisição é a **Menu → Verificar
+  atualizações**, disparada por você, que consulta `api.github.com` pela tag
+  da release mais recente e envia apenas um `User-Agent` genérico (sem
+  identificadores, sem dados de uso, sem polling em segundo plano);
 - D-Bus apenas no **bus de sessão** (serviço `org.wayvibrance` + o nome de
   componente do tray); nada de bus de sistema;
 - o tray só confia em `org.wayvibrance` quando a conexão dona do nome **é o
@@ -312,7 +338,8 @@ efeito de janela ativo, fullscreen exclusivo pode passar pelo compositor
 (custo leve de latência), nunca um evento de detecção.
 
 A pegada é auditável e autossuficiente: código aberto, apenas userspace,
-apenas D-Bus de sessão, sem rede e sem telemetria (ver
+apenas D-Bus de sessão, sem telemetria; a única chamada de rede é a
+verificação de atualizações disparada pelo usuário (ver
 [Privacidade & pegada](#privacidade--pegada)).
 
 ## Capturas de tela

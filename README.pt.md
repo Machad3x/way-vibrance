@@ -23,7 +23,8 @@ visualmente equivalente à vibrância de driver.
   sem foco) com custo extra de GPU zero
 - Hotkey global configurável, seletor de monitor para "só o monitor primário"
 - CLI, estado persistente (`kwinrc`) e pegada **só em espaço do usuário: sem
-  rede, sem daemon, sem telemetria**
+  daemon, sem telemetria** (a única requisição de rede é a verificação de
+  atualizações que você dispara em Menu → Verificar atualizações)
 - Guia completo, API D-Bus e todos os detalhes: **[docs/FEATURES.pt.md](docs/FEATURES.pt.md)**
 
 ## Requisitos
@@ -99,8 +100,10 @@ Instalou via **pacote**? Use o gerenciador da sua distro:
   completa de [limitações](docs/FEATURES.pt.md#limitações-conhecidas) e os
   [detalhes de compatibilidade de versão](docs/FEATURES.pt.md#compatibilidade-de-versão)
   estão na documentação.
-- Tudo roda em espaço do usuário: sem daemons, sem rede, sem telemetria;
-  escreve apenas em `~/.config/{kwinrc,wayvibrancerc}` —
+- Tudo roda em espaço do usuário: sem daemons, sem telemetria; a única
+  requisição de rede é a verificação de atualizações que você dispara
+  (Menu → Verificar atualizações); escreve apenas em
+  `~/.config/{kwinrc,wayvibrancerc}` —
   [privacidade & pegada](docs/FEATURES.pt.md#privacidade--pegada).
 - Segurança frente a anticheats: a correção de cor ocorre no compositor do
   desktop, *depois* de o jogo apresentar seus frames — nenhuma interação

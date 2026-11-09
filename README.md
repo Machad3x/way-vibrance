@@ -99,8 +99,9 @@ Installed a **package** instead? Use your package manager:
   [limitations list](docs/FEATURES.md#known-limitations) and the
   [version-compatibility details](docs/FEATURES.md#version-compatibility)
   live in the docs.
-- Everything runs in userspace: no daemons, no network, no telemetry;
-  writes only to `~/.config/{kwinrc,wayvibrancerc}` —
+- Everything runs in userspace: no daemons, no telemetry; the only network
+  request is the on-demand update check you trigger yourself
+  (Menu → Check for Updates); writes only to `~/.config/{kwinrc,wayvibrancerc}` —
   [privacy & footprint](docs/FEATURES.md#privacy--footprint).
 - Anti-cheat safety: the grade happens in the desktop compositor, *after*
   the game presents its frames — no game-process interaction at all, the

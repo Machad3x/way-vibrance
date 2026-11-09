@@ -73,6 +73,7 @@ Release ${VERSION}.
 - **Per-app/game profiles**: \`app:\` (Wayland app_id / X11 WM_CLASS) or \`title:\` globs, each with its own vibrance + channel gains and an optional cosmetic display name — applied per window, even unfocused, at no extra GPU cost
 - Tray app: two-pane UI, per-profile editor window with Apply + presets (50/100/125/150/200%), behaviour settings, monitor picker for "only primary monitor" (a fixed output — not the pointer)
 - Configurable global hotkey (KGlobalAccel, conflict detection, persisted)
+- Menu → About and Check for Updates: asks GitHub for the latest release and points to the correct update command for your install (Flatpak/Snap/AppImage/distro package)
 - CLI: \`wayvibrance 1.25 | toggle | get | rgb | primary [on|off|get|outputs|output <name>] | app [list|set|del|name|reset|focused]\`
 - Prebuilt packages attached for currently supported releases (Fedora RPM incl. rpm-ostree/Atomic, Debian/Ubuntu DEB, Arch pkg), each built and install-verified in a container of its own release
 
@@ -142,6 +143,8 @@ notes = (f"Release {ver}.\n\n"
          "- Tray: two-pane UI, profile editor with Apply/presets, monitor picker "
          "for primary-monitor mode (fixed output, not the pointer)\n"
          "- Configurable global hotkey (KGlobalAccel) with conflict detection\n"
+         "- Menu → About / Check for Updates: latest GitHub release + the right "
+         "update command for your install (Flatpak/Snap/AppImage/package)\n"
          "- CLI: wayvibrance get/set/toggle/rgb/primary/app\n"
          "- Prebuilt packages attached for currently supported releases "
          "(Fedora/Debian/Ubuntu/Arch), install-verified per release\n\n"

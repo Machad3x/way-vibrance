@@ -9,6 +9,7 @@ and run. Back to [README](../README.md) · [Roadmap](ROADMAP.md).
 - [How it works](#how-it-works)
 - [Per-app profiles (the deep dive)](#per-app-profiles)
 - [Hotkey & behaviour settings](#hotkey--behaviour-settings)
+- [Menu, About & update checking](#menu-about--update-checking)
 - [CLI reference](#cli-reference)
 - [D-Bus API](#d-bus-api)
 - [Configuration files](#configuration-files)
@@ -130,6 +131,27 @@ monitor's game keeps its look.
   jumps (picks by connector name, e.g. `DP-1`; "Automatic" = KWin's first
   output; the picked output's list refreshes on hotplug).
 
+## Menu, About & update checking
+
+The tray window carries a **Menu** entry with two actions (also available from
+the tray icon's context menu, so they work with the window hidden):
+
+- **About Way Vibrance** — a small dialog with the project's purpose, the
+  running version, and the GitHub link.
+- **Check for Updates…** — asks `api.github.com` for the latest release tag
+  and compares it with the running build (semantically, tolerating a `v`
+  prefix and pre-release suffixes). When a newer tag exists, the dialog shows
+  the release page and the **correct update command for how this copy was
+  installed**: Flatpak (`flatpak update`), Snap (`snap refresh`), AppImage
+  (download the new AppImage) or the distro's package manager (`pacman`,
+  `dnf`, `zypper`, `apt`; `ID_LIKE` is honoured so derivatives match their
+  parent family).
+
+Way Vibrance deliberately **never downloads or installs anything itself**:
+updating is the package manager's job, and the app only points you at the
+right place. The check is manual (no background polling) and the only data
+sent is a generic `User-Agent`.
+
 ## CLI reference
 
 Full and authoritative output: `wayvibrance --help`. Quick map:
@@ -244,7 +266,11 @@ manifest nor a planted `bin ->` symlink can smuggle unrelated paths into
 ## Privacy & footprint
 
 Everything runs in **userspace**:
-- no daemons, no kernel modules, no network access, no telemetry;
+- no daemons, no kernel modules, no telemetry;
+- no network access by default: the only request is the on-demand
+  **Menu → Check for Updates**, which queries `api.github.com` for the latest
+  release tag and sends nothing but a generic `User-Agent` (no identifiers,
+  no usage data, no background polling);
 - D-Bus on the **session bus only** (`org.wayvibrance` service + the tray's
   own component name); no system bus usage;
 - the tray trusts `org.wayvibrance` only when the connection owning the
@@ -306,8 +332,8 @@ exclusive fullscreen may go through the compositor (a small latency cost),
 never a detection event.
 
 The footprint is auditable and self-contained: open source, userspace only,
-session D-Bus only, no network, no telemetry (see
-[Privacy & footprint](#privacy--footprint)).
+session D-Bus only, no telemetry; the sole network call is the user-triggered
+update check (see [Privacy & footprint](#privacy--footprint)).
 
 ## Screenshots
 
