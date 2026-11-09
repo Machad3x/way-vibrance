@@ -29,6 +29,7 @@
 
 #include <QDebug>
 #include <QDBusConnection>
+#include <QSet>
 #include <QTimer>
 #include <QUrl>
 
@@ -892,13 +893,14 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
     // applied, and we are only ever called with a GL context current
     // (drawWindow), so freeing here is otherwise safe.
     if (m_shaderPool.size() >= kMaxShaderVariants) {
+        QSet<GLShader *> inUse;
+        for (auto it = m_windowMatch.constBegin(); it != m_windowMatch.constEnd(); ++it) {
+            if (it.value().appliedShader) {
+                inUse.insert(it.value().appliedShader);
+            }
+        }
         for (auto pit = m_shaderPool.begin(); pit != m_shaderPool.end();) {
-            const GLShader *candidate = pit.value().shader.get();
-            const bool inUse = std::any_of(m_windowMatch.cbegin(), m_windowMatch.cend(),
-                                           [candidate](const WindowMatch &m) {
-                                               return m.appliedShader == candidate;
-                                           });
-            if (!inUse) {
+            if (!inUse.contains(pit.value().shader.get())) {
                 pit = m_shaderPool.erase(pit);
             } else {
                 ++pit;
@@ -936,14 +938,27 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
         // A variant compile just failed: do not retry from every frame.
         return nullptr;
     }
+    // A gain set gets the same bounded attempts as the global shader. Without
+    // this ceiling a hostile profile editor could keep paying a compile
+    // attempt per second from the paint path, forever.
+    if (m_variantFailures.value(key, 0) >= kMaxShaderAttempts) {
+        return nullptr;
+    }
     auto fresh = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
                                                                    QLatin1String(s_shaderPath));
     if (!fresh) {
         m_variantRetryTimer.start();
-        qWarning() << "Way Vibrance: failed to compile a per-profile gain shader;"
-                   << "windows needing it fall back to the vibrance-only path";
+        const int failures = ++m_variantFailures[key];
+        if (failures >= kMaxShaderAttempts) {
+            qWarning() << "Way Vibrance: giving up on compiling a per-profile gain shader after"
+                       << failures << "attempts; windows needing it fall back to the vibrance-only path";
+        } else {
+            qWarning() << "Way Vibrance: failed to compile a per-profile gain shader (attempt"
+                      << failures << "of" << kMaxShaderAttempts << "); retrying";
+        }
         return nullptr;
     }
+    m_variantFailures.remove(key); // success: forget past failures for this set
     {
         ShaderBinder binder{fresh.get()};
         fresh->setUniform("rgbGain", gains);
@@ -1087,19 +1102,32 @@ void VibranceEffect::persist()
     // Per-app profiles live in a child group; keys are the percent-encoded
     // "kind:pattern", values "vibrance" plus "|r,g,b" when the profile
     // carries its own channel gains.
-    cfg.group(QString::fromLatin1(s_rulesGroupName)).deleteGroup();
+    //
+    // Write the new entries FIRST and only then drop the keys that no longer
+    // exist. deleteGroup() before the rewrite used to be the window where a
+    // crash (or the destructor's own flush during logout) left kwinrc with
+    // no profiles at all.
+    KConfigGroup rulesCfg = cfg.group(QString::fromLatin1(s_rulesGroupName));
     QStringList order;
-    if (!m_rules.isEmpty()) {
-        KConfigGroup rulesCfg(config, QStringLiteral("Effect-%1").arg(QString::fromLatin1(s_configName)));
-        rulesCfg = rulesCfg.group(QString::fromLatin1(s_rulesGroupName));
-        order.reserve(m_rules.size());
-        for (const AppRule &rule : m_rules) {
-            const QString id = serializedRule(rule);
-            const int firstSep = id.indexOf(QLatin1Char('|'));
-            const QString key = QString::fromLatin1(QUrl::toPercentEncoding(id.left(firstSep)));
-            rulesCfg.writeEntry(key, id.mid(firstSep + 1));
-            order.append(key);
+    order.reserve(m_rules.size());
+    for (const AppRule &rule : m_rules) {
+        const QString id = serializedRule(rule);
+        const int firstSep = id.indexOf(QLatin1Char('|'));
+        const QString key = QString::fromLatin1(QUrl::toPercentEncoding(id.left(firstSep)));
+        rulesCfg.writeEntry(key, id.mid(firstSep + 1));
+        order.append(key);
+    }
+    const QStringList stale = rulesCfg.keyList();
+    for (const QString &key : stale) {
+        if (!order.contains(key)) {
+            rulesCfg.deleteEntry(key);
         }
+    }
+    if (order.isEmpty()) {
+        // Nothing left: remove the group itself so a hand-edited kwinrc does
+        // not keep an empty section around. Safe now — the writes above
+        // already replaced every surviving key.
+        rulesCfg.deleteGroup();
     }
     // Rules are first-match-wins and KConfig stores them key-sorted, so save
     // the creation order explicitly (in the parent group, never mixed with
