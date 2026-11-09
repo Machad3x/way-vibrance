@@ -2069,7 +2069,7 @@ int main(int argc, char *argv[])
 
     KAboutData about(QStringLiteral("org.kde.wayvibrance-tray"),
                      QStringLiteral("Way Vibrance"),
-                     QStringLiteral("0.6.2"),
+                     QStringLiteral("0.6.3"),
                      QObject::tr("System-wide vibrance and per-channel RGB control for KDE Plasma on Wayland"),
                      KAboutLicense::GPL);
     about.setDesktopFileName(QStringLiteral("org.kde.wayvibrance-tray"));

@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Existing release tag to rebuild/attach (e.g. v0.6.2); empty = the pushed tag"
+        description: "Existing release tag to rebuild/attach (e.g. v0.6.3); empty = the pushed tag"
         required: false
         default: ""
 

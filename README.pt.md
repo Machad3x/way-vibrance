@@ -114,7 +114,7 @@ prebuilt/CI, OSD — veja **[docs/ROADMAP.pt.md](docs/ROADMAP.pt.md)**.
 
 ## Estado
 
-Funcional e em uso diário; release atual **v0.6.2** — a linha de hardening concluída (rodadas 2–10 da
+Funcional e em uso diário; release atual **v0.6.3** — a linha de hardening concluída (rodadas 2–10 da
 auditoria estática, nenhuma mudança de comportamento): confiança D-Bus
 ancorada no PID do compositor e revalidada a cada troca de dono, tetos de
 string em todos os pontos de entrada incluindo as identidades de janela, um

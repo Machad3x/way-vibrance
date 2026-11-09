@@ -114,7 +114,7 @@ packages/CI, OSD — see **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 ## Status
 
-Functional and in daily use; current release **v0.6.2** — the completed
+Functional and in daily use; current release **v0.6.3** — the completed
 hardening line (static-audit rounds 2–10, no behaviour change): D-Bus trust
 anchored to the compositor PID and revalidated on owner changes, string
 ceilings at every entry point including window identities, a fully async
