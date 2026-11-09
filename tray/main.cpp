@@ -1464,20 +1464,22 @@ public:
         folderPixmap.setDevicePixelRatio(emptyIconDpr);
         emptyIcon->setPixmap(folderPixmap);
         emptyIcon->setAlignment(Qt::AlignCenter);
-        emptyLayout->addWidget(emptyIcon);
+        emptyLayout->addWidget(emptyIcon, 0, Qt::AlignHCenter);
         auto *emptyTitle = new QLabel(tr("No profiles yet"), emptyPage);
         QFont emptyTitleFont = emptyTitle->font();
         emptyTitleFont.setBold(true);
         emptyTitle->setFont(emptyTitleFont);
         emptyTitle->setAlignment(Qt::AlignCenter);
-        emptyLayout->addWidget(emptyTitle);
+        emptyLayout->addWidget(emptyTitle, 0, Qt::AlignHCenter);
         auto *emptyHint = new QLabel(
             tr("Add an application below to give it its own vibrance and RGB gains."), emptyPage);
         emptyHint->setProperty("wvHint", true);
         emptyHint->setAlignment(Qt::AlignCenter);
         emptyHint->setWordWrap(true);
-        emptyHint->setMaximumWidth(260);
-        emptyLayout->addWidget(emptyHint);
+        emptyHint->setMinimumWidth(200); // Garante espaço, mas permite que o layout controle
+        emptyHint->setMaximumWidth(300); // Restringe a largura para não ficar muito estreito
+        emptyHint->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        emptyLayout->addWidget(emptyHint, 0, Qt::AlignHCenter);
         emptyLayout->addStretch(1);
 
         m_profileList = new QListWidget(m_profileStack);
@@ -1491,10 +1493,22 @@ public:
         updateProfileEmptyState();
 
         auto *profileButtons = new QHBoxLayout();
-        auto *addFocusedButton = new QPushButton(tr("From last focused…"), m_profileGroup);
+        profileButtons->setContentsMargins(0, 4, 0, 0); // Add top margin to separate from list
+        profileButtons->setSpacing(10); // Aumenta o respiro entre botões
+
+        // Botões com ícones e estilo definido para garantir que pareçam botões
+        auto *addFocusedButton = new QPushButton(QIcon::fromTheme(QStringLiteral("search")), tr("From last focused…"), m_profileGroup);
+        auto *addButton = new QPushButton(QIcon::fromTheme(QStringLiteral("list-add")), tr("Add…"), m_profileGroup);
+        auto *removeButton = new QPushButton(QIcon::fromTheme(QStringLiteral("list-remove")), tr("Remove"), m_profileGroup);
+
+        // Estilo moderno: background definido pela paleta, bordas suaves e padding
+        QString btnStyle = QStringLiteral("QPushButton { background: palette(button); border: 1px solid palette(mid); border-radius: 4px; padding: 5px 10px; } "
+                                          "QPushButton:hover { background: palette(midlight); }");
+        addFocusedButton->setStyleSheet(btnStyle);
+        addButton->setStyleSheet(btnStyle);
+        removeButton->setStyleSheet(btnStyle);
+
         addFocusedButton->setToolTip(tr("Pre-fill the app ID of the window you focused before this one."));
-        auto *addButton = new QPushButton(tr("Add…"), m_profileGroup);
-        auto *removeButton = new QPushButton(tr("Remove"), m_profileGroup);
         profileButtons->addWidget(addFocusedButton);
         profileButtons->addWidget(addButton);
         profileButtons->addWidget(removeButton);
@@ -2125,7 +2139,12 @@ int main(int argc, char *argv[])
     auto *enabledAction = menu->addAction(QObject::tr("Enabled"));
     enabledAction->setCheckable(true);
     enabledAction->setChecked(true);
-    QObject::connect(enabledAction, &QAction::toggled, &controller, &VibranceController::requestVibranceEnabled);
+    // Guard: ignore toggles while the effect attachment is in flight to
+    // prevent race conditions in the D-Bus service registration/unregistration.
+    QObject::connect(enabledAction, &QAction::toggled, &controller, [&controller](bool enabled) {
+        if (!controller.effectAvailable()) return;
+        controller.requestVibranceEnabled(enabled);
+    });
     QObject::connect(&controller, &VibranceController::enabledFromEffect, enabledAction, &QAction::setChecked);
     QObject::connect(&controller, &VibranceController::availableChanged, enabledAction,
                      [enabledAction](bool available) { enabledAction->setEnabled(available); });
