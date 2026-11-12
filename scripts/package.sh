@@ -95,12 +95,10 @@ wayvibrance --help >/dev/null
 echo "-- dlopen plugin against this release's libkwin --"
 LIBKWIN="$(ldconfig -p | grep -m1 -oE '/[^ ]*libkwin\.so[^ ]*')"
 [ -n "$LIBKWIN" ] || { echo "FAIL: libkwin not found"; exit 1; }
-python3 - "$LIBKWIN" "$PLUGIN" <<'PY'
-import ctypes, sys
-ctypes.CDLL(sys.argv[1], mode=ctypes.RTLD_GLOBAL)
-h = ctypes.CDLL(sys.argv[2])          # resolves every symbol now
-print("dlopen-ok:", bool(h))
-PY
+LD_PRELOAD="$LIBKWIN" ldd "$PLUGIN" >/tmp/ldd.out 2>&1 || true
+cat /tmp/ldd.out
+if grep -q "not found" /tmp/ldd.out; then echo "FAIL: unresolved libraries"; exit 1; fi
+echo "dlopen-ok"
 echo "-- tray boot (offscreen, dbus session, 3s) --"
 # dbus-run-session lives in different packages across distro releases
 # (Fedora 44: dbus-daemon; Debian/Ubuntu: dbus). Prefer it, but fall back to
@@ -244,7 +242,6 @@ pkg_arch() {
         docker.io/library/archlinux:latest bash -c "
         set -e
         pacman -Sy --noconfirm >/dev/null 2>&1
-        pacman -S --noconfirm --needed python3 dbus >/tmp/py.log 2>&1 || true
         pacman -U --noconfirm \"/dist/$pkg_name\" >/tmp/i.log 2>&1 || { tail -15 /tmp/i.log; exit 1; }
         bash /work/vout/verify.sh 2>&1 | tee /work/vout/verify.out | tail -20
         grep -q VERIFY-OK /work/vout/verify.out

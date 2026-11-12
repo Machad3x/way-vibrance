@@ -266,7 +266,7 @@ private:
     // Cached output list for the primary-monitor scope check (invalidated
     // on screen add/remove; effects->screens() is otherwise queried per
     // window per frame).
-    mutable QList<LogicalOutput *> m_cachedScreens;
+    mutable decltype(effects->screens()) m_cachedScreens;
     mutable bool m_screensCacheValid = false;
     QString m_lastFocusedAppId;
     struct ShaderVariant {

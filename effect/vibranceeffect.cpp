@@ -165,10 +165,10 @@ VibranceEffect::VibranceEffect()
 
     connect(effects, &EffectsHandler::windowDeleted, this, &VibranceEffect::onWindowDeleted);
     connect(effects, &EffectsHandler::windowActivated, this, &VibranceEffect::onWindowActivated);
-    connect(effects, &EffectsHandler::screenAdded, this, [this](LogicalOutput *) {
+    connect(effects, &EffectsHandler::screenAdded, this, [this]() {
         m_screensCacheValid = false;
     });
-    connect(effects, &EffectsHandler::screenRemoved, this, [this](LogicalOutput *) {
+    connect(effects, &EffectsHandler::screenRemoved, this, [this]() {
         m_screensCacheValid = false;
     });
 
