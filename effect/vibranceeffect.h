@@ -81,6 +81,22 @@ class VibranceEffect : public OffscreenEffect
     Q_OBJECT
 
 public:
+        struct AppRule
+    {
+        QString pattern; // glob without the kind prefix
+        bool titleMatch = false;
+        qreal vibrance = 1.0;
+        QVector3D gains{1.0f, 1.0f, 1.0f}; // per-profile channel gains
+        QString displayName; // cosmetic only: what the UI lists instead of
+                             // the friendly form of the pattern (matching
+                             // keeps using the pattern)
+        bool hasGains() const { return !qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f)); }
+    };
+
+    // Exposed for unit testing of (de)serialization.
+    static QString serializedRule(const AppRule &rule);
+    static bool parseRule(const QString &serialized, AppRule &ruleOut);
+
     explicit VibranceEffect();
     ~VibranceEffect() override;
 
@@ -204,18 +220,6 @@ private Q_SLOTS:
     void onWindowActivated(KWin::EffectWindow *w);
 
 private:
-    struct AppRule
-    {
-        QString pattern; // glob without the kind prefix
-        bool titleMatch = false;
-        qreal vibrance = 1.0;
-        QVector3D gains{1.0f, 1.0f, 1.0f}; // per-profile channel gains
-        QString displayName; // cosmetic only: what the UI lists instead of
-                             // the friendly form of the pattern (matching
-                             // keeps using the pattern)
-        bool hasGains() const { return !qFuzzyCompare(gains, QVector3D(1.0f, 1.0f, 1.0f)); }
-    };
-
     struct WindowMatch
     {
         quint64 stamp = 0;
@@ -232,8 +236,6 @@ private:
 
     void resolveWindow(EffectWindow *w);
     void invalidateMatchCache();
-    static QString serializedRule(const AppRule &rule);
-    static bool parseRule(const QString &serialized, AppRule &ruleOut);
     void applyRule(const QString &prefixedPattern, qreal vibrance,
                    const std::optional<QVector3D> &gains, const std::optional<QString> &name);
 

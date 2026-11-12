@@ -54,3 +54,32 @@ add_test(NAME version_test COMMAND version_test)
 add_test(NAME switch_widget_test_hidpi COMMAND switch_widget_test)
 set_tests_properties(switch_widget_test_hidpi PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")
+
+# Versioned guarantee for per-app profile (de)serialization round trip.
+add_executable(config_roundtrip_test
+    config_roundtrip_test.cpp
+    ${CMAKE_SOURCE_DIR}/effect/vibranceeffect.cpp
+)
+target_link_libraries(config_roundtrip_test PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::DBus
+    Qt6::OpenGL
+    KF6::ConfigCore
+    KWin::kwin
+)
+target_include_directories(config_roundtrip_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/effect
+    ${CMAKE_SOURCE_DIR}
+)
+set_target_properties(config_roundtrip_test PROPERTIES AUTOMOC ON)
+add_test(NAME config_roundtrip_test COMMAND config_roundtrip_test)
+
+# Versioned guarantee for the tray's D-Bus owner verification: only a
+# compositor-owned service is trusted.
+add_executable(dbus_security_test dbus_security_test.cpp)
+target_link_libraries(dbus_security_test PRIVATE Qt6::Core Qt6::DBus)
+target_include_directories(dbus_security_test PRIVATE ${CMAKE_SOURCE_DIR}/tray)
+add_test(NAME dbus_security_test COMMAND dbus_security_test)
+set_tests_properties(dbus_security_test PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
