@@ -749,22 +749,30 @@ void VibranceEffect::resolveWindow(EffectWindow *w)
     static const QString s_noString;
     const QString &rawClass = w->window() ? w->window()->resourceClass() : s_noString;
     const QString &rawName = w->window() ? w->window()->resourceName() : s_noString;
+    // Fast path for already-oversize windows: no identity (including caption)
+    // reads needed when the match stamp is unchanged.
+    if (entry.oversize && entry.stamp == m_matchStamp) {
+        return;
+    }
+    // Class/name oversize can be decided without reading the caption.
+    const bool classOrNameOversize = rawClass.size() > kMaxWindowIdentityLength
+        || rawName.size() > kMaxWindowIdentityLength;
+    if (classOrNameOversize) {
+        entry.stamp = m_matchStamp;
+        entry.oversize = true;
+        entry.idA.clear();
+        entry.idB.clear();
+        entry.caption.clear();
+        entry.ruleIndex = -1;
+        return;
+    }
+    // Only read the caption when class/name are within limits.
     const QString &rawCaption = w->caption();
     // Cap before anything touches these (compare/match/store): a window
     // claiming megabyte identities costs this path at most kMaxWindow-
     // IdentityLength per frame and is excluded from profile matching —
     // an oversized identity is not a style anyone can name with a glob.
-    const bool oversize = rawClass.size() > kMaxWindowIdentityLength
-        || rawName.size() > kMaxWindowIdentityLength
-        || rawCaption.size() > kMaxWindowIdentityLength;
-    if (oversize) {
-        // Oversized identities never match any profile (policy), so the
-        // only state that matters is the flag + stamp. A window that keeps
-        // re-publishing megabyte names hits this return instead of paying
-        // three 1 KB truncation copies and a memcmp per frame.
-        if (entry.oversize && entry.stamp == m_matchStamp) {
-            return;
-        }
+    if (rawCaption.size() > kMaxWindowIdentityLength) {
         entry.stamp = m_matchStamp;
         entry.oversize = true;
         entry.idA.clear();
