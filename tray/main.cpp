@@ -992,9 +992,10 @@ static QString friendlyAppName(const QString &prefixedPattern)
     }
     QString name = body.section(QLatin1Char('.'), -1);
     name.replace(QLatin1Char('_'), QLatin1Char(' '));
-    if (!name.isEmpty()) {
-        name = name.at(0).toUpper() + name.mid(1);
+    if (name.isEmpty()) {
+        return prefixedPattern; // fallback: never show an empty list label
     }
+    name = name.at(0).toUpper() + name.mid(1);
     return name;
 }
 
