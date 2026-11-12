@@ -1543,7 +1543,6 @@ public:
         // window, mirroring the global controls.
         m_profileGroup = new QGroupBox(tr("Per-app profiles"), m_sidePane);
         // Flat & Airy: removing the group box border, adding consistent radius for modern UI
-        m_profileGroup->setStyleSheet(QStringLiteral("QGroupBox { border: none; font-weight: bold; }"));
         // Applying border radius to buttons and inputs within to match Plasma 6 style
         m_profileGroup->setStyleSheet(QStringLiteral("QGroupBox { border: none; font-weight: bold; } QPushButton { border-radius: 4px; } QLineEdit { border-radius: 4px; } QComboBox { border-radius: 4px; }"));
         auto *profileLayout = new QVBoxLayout(m_profileGroup);
