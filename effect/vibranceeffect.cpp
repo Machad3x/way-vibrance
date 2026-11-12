@@ -451,9 +451,9 @@ QString VibranceEffect::serializedRule(const AppRule &rule)
     // in the fourth slot.
     if (rule.hasGains() || !rule.displayName.isEmpty()) {
         out += QStringLiteral("|%1,%2,%3")
-                   .arg(rule.gains.x(), 0, 'g', 4)
-                   .arg(rule.gains.y(), 0, 'g', 4)
-                   .arg(rule.gains.z(), 0, 'g', 4);
+                   .arg(rule.gains.x(), 0, 'g', 7)
+                   .arg(rule.gains.y(), 0, 'g', 7)
+                   .arg(rule.gains.z(), 0, 'g', 7);
     }
     if (!rule.displayName.isEmpty()) {
         // Names are guaranteed pipe-free at every entry point (applyRule /
