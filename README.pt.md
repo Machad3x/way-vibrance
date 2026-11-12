@@ -122,7 +122,9 @@ hardening: confiança D-Bus ancorada no PID do compositor e revalidada a cada
 troca de dono, tetos de string em todos os pontos de entrada incluindo as
 identidades de janela, tray totalmente assíncrono e à prova de congelamento,
 matching de glob orçado com teste fuzz versionado no CI, tentativas de
-compilação de shader e cache limitados, persistência atômica dos perfis e
+compilação de shader e cache limitados com backoff exponencial, persistência
+atômica dos perfis com backup e restauração em falha, setters D-Bus com
+limite de taxa, observação do arquivo de config para edições externas e
 desinstalador à prova de manifesto adulterado e de symlinks. A bandeja agora
 traz layout em cartões derivado do tema, sliders com cores por canal, presets
 segmentados, botões de reset por slider e chaves que seguem a paleta. O CLI é

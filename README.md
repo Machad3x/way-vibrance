@@ -119,8 +119,10 @@ Functional and in daily use; current release **v0.6.6** — post-release hardeni
 completed hardening line: D-Bus trust anchored to the compositor PID and
 revalidated on owner changes, string ceilings at every entry point including
 window identities, a fully async non-freezable tray, budgeted glob matching
-with a versioned fuzz test in CI, bounded shader retries/cache, atomic profile
-persistence, and a tamper/symlink-proof uninstaller. The tray now has a
+with a versioned fuzz test in CI, bounded shader retries/cache with
+exponential backoff, atomic profile persistence with backup-and-restore on
+failure, rate-limited D-Bus setters, config-file watching for external
+edits, and a tamper/symlink-proof uninstaller. The tray now has a
 theme-derived card layout, channel-coloured sliders, segmented presets,
 per-slider reset buttons and palette-aware switches. The CLI is shipped and
 installed as `wayvibrance`; existing configs, per-app profiles and hotkeys
@@ -131,9 +133,12 @@ CI), real primary-monitor output picking, and fully bilingual docs remain.
 
 ## Development
 
-The versioned matcher test (`tests/glob_match_test.cpp`, runs via
-`ctest --test-dir build -R glob_match` and in CI) fuzz-verifies the glob
-matcher against the frozen v0.6.1 reference and its step-budget ceilings.
+The versioned tests (run via `ctest --test-dir build` and in CI) include:
+`glob_match_test` (fuzz of the glob matcher against the frozen v0.6.1
+reference and its step-budget ceilings), `config_roundtrip_test` (per-app
+profile (de)serialization round trip), `dbus_security_test` (fail-closed
+D-Bus owner verification), plus widget, theme, preset, switch and version
+tests.
 
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
