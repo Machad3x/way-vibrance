@@ -100,6 +100,7 @@ static bool validFactor(qreal v, qreal &clampedOut)
 VibranceEffect::VibranceEffect()
 {
     m_persistTimer = new QTimer(this);
+    m_rateTimer.start();
     m_persistTimer->setSingleShot(true);
     m_persistTimer->setInterval(500);
     connect(m_persistTimer, &QTimer::timeout, this, &VibranceEffect::persist);
@@ -293,8 +294,13 @@ QString VibranceEffect::primaryOutputName() const
 
 void VibranceEffect::setPrimaryOutputName(const QString &name)
 {
+    if (!acquireRateToken()) return;
     if (name.size() > kMaxOutputNameLength) {
         qWarning() << "Way Vibrance: ignoring oversized primary output name" << name.size();
+        return;
+    }
+    if (name.contains(QChar('\n')) || name.contains(QChar('\r')) || name.contains(QChar('\0'))) {
+        qWarning() << "Way Vibrance: ignoring primary output name with control chars";
         return;
     }
     const QString trimmed = name.trimmed();
@@ -535,6 +541,27 @@ void VibranceEffect::invalidateMatchCache()
     ++m_matchStamp;
 }
 
+bool VibranceEffect::acquireRateToken()
+{
+    // Simple token bucket: burst of 32, refill at 64 tokens/sec. Excess
+    // D-Bus setter calls are dropped to limit local DoS / signal storms.
+    if (!m_rateTimer.isValid()) {
+        m_rateTimer.start();
+        return true;
+    }
+    const qint64 elapsed = m_rateTimer.elapsed();
+    const int refill = static_cast<int>(elapsed * 64 / 1000);
+    if (refill > 0) {
+        m_rateTokens = qMin(32, m_rateTokens + refill);
+        m_rateTimer.restart();
+    }
+    if (m_rateTokens <= 0) {
+        return false;
+    }
+    --m_rateTokens;
+    return true;
+}
+
 void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
                                const std::optional<QVector3D> &gains,
                                const std::optional<QString> &name)
@@ -630,6 +657,7 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
 
 void VibranceEffect::setAppRule(const QString &prefixedPattern, qreal vibrance)
 {
+    if (!acquireRateToken()) return;
     // Keeps whatever channel gains and display name the profile already carries.
     applyRule(prefixedPattern, vibrance, std::nullopt, std::nullopt);
 }
@@ -637,6 +665,7 @@ void VibranceEffect::setAppRule(const QString &prefixedPattern, qreal vibrance)
 void VibranceEffect::setAppRuleFull(const QString &prefixedPattern, qreal vibrance,
                                     qreal red, qreal green, qreal blue)
 {
+    if (!acquireRateToken()) return;
     // applyRule() rejects non-finite gains; validate before clampGains(),
     // which deliberately degrades non-finite channels to neutral for the
     // global path.
@@ -649,6 +678,7 @@ void VibranceEffect::setAppRuleFull(const QString &prefixedPattern, qreal vibran
 
 void VibranceEffect::setAppRuleName(const QString &prefixedPattern, const QString &name)
 {
+    if (!acquireRateToken()) return;
     // Cosmetic-only edit: finds the existing rule and touches nothing else.
     if (prefixedPattern.size() > kMaxPrefixedPatternLength) {
         qWarning() << "Way Vibrance: app profile input too long" << prefixedPattern.size();
@@ -687,6 +717,7 @@ void VibranceEffect::setAppRuleName(const QString &prefixedPattern, const QStrin
 
 void VibranceEffect::removeAppRule(const QString &prefixedPattern)
 {
+    if (!acquireRateToken()) return;
     if (prefixedPattern.size() > kMaxPrefixedPatternLength) {
         return; // nothing legitimate (or addable) is this long
     }
@@ -1042,6 +1073,7 @@ void VibranceEffect::updateRedirects()
 
 void VibranceEffect::setVibrance(qreal value)
 {
+    if (!acquireRateToken()) return;
     qreal valid = 1.0;
     if (!validFactor(value, valid)) {
         qWarning() << "Way Vibrance: ignoring non-finite vibrance";
@@ -1067,6 +1099,7 @@ qreal VibranceEffect::vibrance() const
 
 void VibranceEffect::setVibranceEnabled(bool enabled)
 {
+    if (!acquireRateToken()) return;
     if (enabled == m_enabled) {
         return;
     }
@@ -1089,6 +1122,7 @@ void VibranceEffect::toggleVibranceEnabled()
 
 void VibranceEffect::setPrimaryOnly(bool primaryOnly)
 {
+    if (!acquireRateToken()) return;
     if (primaryOnly == m_primaryOnly) {
         return;
     }
@@ -1105,6 +1139,7 @@ bool VibranceEffect::primaryOnly() const
 
 void VibranceEffect::setRGBGains(qreal red, qreal green, qreal blue)
 {
+    if (!acquireRateToken()) return;
     // Unlike configuration loading, a live D-Bus request must be rejected as
     // a whole when any channel is non-finite; silently replacing one channel
     // with neutral would make a malformed request appear successful.
