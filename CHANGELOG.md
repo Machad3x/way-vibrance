@@ -4,11 +4,12 @@ All notable changes to Way Vibrance are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows
 [SemVer](https://semver.org/).
 
-## [0.6.6] - 2026-11-12
+## [0.6.7] - 2026-11-12
 
 ### Added
-- `KConfigWatcher` on `kwinrc` so external edits are picked up without a
-  KWin restart.
+- `QFileSystemWatcher` on `kwinrc` so external edits are picked up without a
+  KWin restart (survives atomic renames).
+- Atomic `kwinrc` persistence via temp file + rename.
 - D-Bus setter rate limiting (token bucket) in the effect.
 - Backup-and-restore around `kwinrc` persistence.
 - `docs/adr/0001-tray-compositor-owner.md` documenting the compositor-owner
@@ -33,9 +34,10 @@ All notable changes to Way Vibrance are documented here. Format based on
 ### Fixed
 - `kwinrc` `sync()` result is now checked; backup is restored on failure.
 - `setPrimaryOutputName` rejects control characters.
-- Version metadata and docs aligned to 0.6.6.
+- Version metadata and docs aligned to 0.6.7.
 
 ### Security
 - `kwinrc` persistence is guarded against truncation/corruption.
+- Atomic write eliminates the partial-write window on crash/logout.
 - D-Bus setters are rate-limited against local DoS.
 - Primary output name validated on the setter path.
