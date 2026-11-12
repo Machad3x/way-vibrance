@@ -95,7 +95,7 @@ wayvibrance --help >/dev/null
 echo "-- dlopen plugin against this release's libkwin --"
 LIBKWIN="$(ldconfig -p | grep -m1 -oE '/[^ ]*libkwin\.so[^ ]*')"
 [ -n "$LIBKWIN" ] || { echo "FAIL: libkwin not found"; exit 1; }
-LD_PRELOAD="$LIBKWIN" ldd "$PLUGIN" >/tmp/ldd.out 2>&1 || true
+ldd "$PLUGIN" >/tmp/ldd.out 2>&1 || true
 cat /tmp/ldd.out
 if grep -q "not found" /tmp/ldd.out; then echo "FAIL: unresolved libraries"; exit 1; fi
 echo "dlopen-ok"
@@ -221,7 +221,7 @@ pkg_arch() {
     echo "  [build ] $target"
     "$TOOL" run --rm -v "$stage:/work:rw" -e MAKEFLAGS="-j$JBERS" \
         docker.io/library/archlinux:latest bash -c "
-        pacman -Sy --noconfirm >/dev/null 2>&1
+        pacman -Syu --noconfirm >/dev/null 2>&1
         pacman -S --noconfirm --needed base-devel cmake extra-cmake-modules kwin qt6-base \
             kconfig kcoreaddons kdbusaddons kglobalaccel vulkan-headers >/tmp/pacman.log 2>&1 || { tail -5 /tmp/pacman.log; exit 1; }
         # makepkg refuses to run as root; build inside the unprivileged
@@ -241,7 +241,7 @@ pkg_arch() {
         -e PM=pkg \
         docker.io/library/archlinux:latest bash -c "
         set -e
-        pacman -Sy --noconfirm >/dev/null 2>&1
+        pacman -Syu --noconfirm >/dev/null 2>&1
         pacman -U --noconfirm \"/dist/$pkg_name\" >/tmp/i.log 2>&1 || { tail -15 /tmp/i.log; exit 1; }
         bash /work/vout/verify.sh 2>&1 | tee /work/vout/verify.out | tail -20
         grep -q VERIFY-OK /work/vout/verify.out
