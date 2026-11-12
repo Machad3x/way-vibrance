@@ -280,7 +280,7 @@ private:
     QElapsedTimer m_shaderRetryTimer; // rate-limits retries from the paint path
     QElapsedTimer m_variantRetryTimer; // rate-limits retries from the paint path
     QElapsedTimer m_rateTimer; // D-Bus setter rate limiting
-    int m_rateTokens = 32; // token bucket
+    int m_rateTokens = 64; // token bucket
     // Per gain-set compile failures: give up on a set after kMaxShaderAttempts
     // instead of retrying it forever from every frame that needs it.
     QHash<QString, int> m_variantFailures;

@@ -171,6 +171,10 @@ VibranceEffect::VibranceEffect()
 
 VibranceEffect::~VibranceEffect()
 {
+    if (m_configWatcher) {
+        m_configWatcher->disconnect(this);
+        m_configWatcher.reset();
+    }
     // The debounce timer dies with the effect: flush a change made within
     // the last 500 ms instead of dropping it on unload/logout.
     if (m_persistTimer && m_persistTimer->isActive()) {
@@ -439,8 +443,10 @@ void VibranceEffect::reloadConfig()
     }
     invalidateMatchCache();
 
-    updateShaderUniforms();
-    updateRedirects();
+    if (effects) {
+        updateShaderUniforms();
+        updateRedirects();
+    }
 
     Q_EMIT vibranceChanged(m_vibrance);
     Q_EMIT enabledChanged(m_enabled);
@@ -558,16 +564,16 @@ void VibranceEffect::invalidateMatchCache()
 
 bool VibranceEffect::acquireRateToken()
 {
-    // Simple token bucket: burst of 32, refill at 64 tokens/sec. Excess
+    // Simple token bucket: burst of 64, refill at 128 tokens/sec. Excess
     // D-Bus setter calls are dropped to limit local DoS / signal storms.
     if (!m_rateTimer.isValid()) {
         m_rateTimer.start();
         return true;
     }
     const qint64 elapsed = m_rateTimer.elapsed();
-    const int refill = static_cast<int>(elapsed * 64 / 1000);
+    const int refill = static_cast<int>(elapsed * 128 / 1000);
     if (refill > 0) {
-        m_rateTokens = qMin(32, m_rateTokens + refill);
+        m_rateTokens = qMin(64, m_rateTokens + refill);
         m_rateTimer.restart();
     }
     if (m_rateTokens <= 0) {
