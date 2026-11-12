@@ -95,6 +95,39 @@ jobs:
             $(pkg-config --cflags --libs Qt6Core) -o version_test
           ./version_test
 
+      - name: Build and run D-Bus owner-verification test
+        # Security-critical: only a compositor-owned org.wayvibrance is
+        # trusted. Qt6DBus only; no KWin runtime needed.
+        run: |
+          g++ -O1 -std=c++17 -fPIC tests/dbus_security_test.cpp -Itray \
+            $(pkg-config --cflags --libs Qt6Core Qt6DBus) -o dbus_security_test
+          QT_QPA_PLATFORM=offscreen ./dbus_security_test
+
+  build-effect-tests:
+    # Full CMake build of the effect module + its KWin-dependent tests
+    # (config round trip). Heavier than unit-tests; informational until the
+    # package set below is confirmed for the runner image.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends \
+            cmake extra-cmake-modules \
+            qt6-base-dev libkf6config-dev libkf6coreaddons-dev \
+            libkf6dbusaddons-dev libkf6globalaccel-dev kwin-dev
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -DBUILD_TESTING=ON
+          cmake --build build --parallel 2
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+
   packages:
     needs: unit-tests      # red unit tests must gate the artifacts (jobs
                            # run in parallel without this)

@@ -97,6 +97,27 @@ int main(int argc, char **argv)
               "too many gain fields rejected");
         check(!KWin::VibranceEffect::parseRule(QStringLiteral("app: |1.0"), out),
               "empty pattern rejected");
+        check(!KWin::VibranceEffect::parseRule(QStringLiteral("app:foo|1.0|1,2,3|a|b"), out),
+              "too many fields rejected");
+        check(!KWin::VibranceEffect::parseRule(QStringLiteral("title:|1.0"), out),
+              "empty title pattern rejected");
+        // Pipe inside the pattern would create an extra field -> rejected.
+        check(!KWin::VibranceEffect::parseRule(QStringLiteral("app:a|b|1.0"), out),
+              "pipe in pattern rejected");
+        // Oversized serialized input: parseRule itself does not enforce the
+        // prefixed-pattern cap, but a huge field count is rejected.
+        QString huge = QStringLiteral("app:x|1.0");
+        for (int i = 0; i < 10; ++i) huge += QStringLiteral("|1,1,1");
+        check(!KWin::VibranceEffect::parseRule(huge, out),
+              "excessive fields rejected");
+    }
+    // Round trip preserves unicode display names.
+    {
+        KWin::VibranceEffect::AppRule r;
+        r.pattern = QStringLiteral("app");
+        r.vibrance = 1.0;
+        r.displayName = QStringLiteral("Café — naïve");
+        check(roundtrip(r), "unicode display name");
     }
 
     if (s_failures == 0) {
