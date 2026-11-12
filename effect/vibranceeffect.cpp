@@ -25,6 +25,7 @@
 #include <opengl/glshadermanager.h>
 
 #include <KConfigGroup>
+#include <KConfig>
 #include <KSharedConfig>
 #include <KConfigWatcher>
 
@@ -1203,8 +1204,11 @@ qreal VibranceEffect::blueGain() const
 
 void VibranceEffect::persist()
 {
-    auto config = KSharedConfig::openConfig(QStringLiteral("kwinrc"));
-    KConfigGroup cfg(config, QStringLiteral("Effect-%1").arg(QString::fromLatin1(s_configName)));
+    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    const QString configPath = configDir + QStringLiteral("/kwinrc");
+    const QString tempPath = configDir + QStringLiteral("/kwinrc.tmp");
+    KConfig tempConfig(tempPath, KConfig::SimpleConfig);
+    KConfigGroup cfg(&tempConfig, QStringLiteral("Effect-%1").arg(QString::fromLatin1(s_configName)));
     cfg.writeEntry("Vibrance", m_vibrance);
     cfg.writeEntry("Enabled", m_enabled);
     cfg.writeEntry("PrimaryOnly", m_primaryOnly);
@@ -1251,26 +1255,33 @@ void VibranceEffect::persist()
     } else {
         cfg.writeEntry(QString::fromLatin1(s_rulesOrderKey), order);
     }
-    // Defensive persistence: back up kwinrc before syncing, then validate
-    // the result. A crash or a wedged disk during sync() must not leave a
-    // truncated/corrupt kwinrc behind — restore the backup on failure.
-    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
-    const QString configPath = configDir + QStringLiteral("/kwinrc");
     const QString backupPath = configPath + QStringLiteral(".bak");
-    const QFileInfo before(configPath);
-    const qint64 previousSize = before.exists() ? before.size() : 0;
-    if (before.exists()) {
+
+    // Atomic persistence: write to a temp file, fsync, then rename over
+    // kwinrc. A crash at any point leaves either the old file or the new
+    // complete file — never a truncated one.
+    m_persisting = true;
+    const bool synced = tempConfig.sync();
+    m_persisting = false;
+    m_lastPersistMs = QDateTime::currentMSecsSinceEpoch();
+
+    if (!synced) {
+        qWarning() << "Way Vibrance: kwinrc sync failed; keeping previous file";
+        QFile::remove(tempPath);
+        return;
+    }
+    // Keep a backup of the previous file for recovery.
+    if (QFile::exists(configPath)) {
         QFile::remove(backupPath);
         QFile::copy(configPath, backupPath);
     }
-    const bool synced = config->sync();
-    const QFileInfo after(configPath);
-    const bool ok = synced && after.exists() && after.size() > 0
-                    && (previousSize == 0 || after.size() >= previousSize / 2);
-    if (!ok && QFile::exists(backupPath)) {
-        qWarning() << "Way Vibrance: kwinrc sync failed or truncated; restoring backup";
-        QFile::remove(configPath);
-        QFile::copy(backupPath, configPath);
+    QFile::remove(configPath);
+    if (!QFile::rename(tempPath, configPath)) {
+        qWarning() << "Way Vibrance: failed to install new kwinrc; restoring backup";
+        QFile::remove(tempPath);
+        if (QFile::exists(backupPath)) {
+            QFile::copy(backupPath, configPath);
+        }
     }
 }
 
