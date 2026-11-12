@@ -27,7 +27,6 @@
 #include <KConfigGroup>
 #include <KConfig>
 #include <KSharedConfig>
-#include <KConfigWatcher>
 
 #include <QDebug>
 #include <QDBusConnection>
@@ -121,18 +120,48 @@ VibranceEffect::VibranceEffect()
 
     reloadConfig();
 
-    // Watch kwinrc so external edits (or our own sync) keep the effect in
-    // sync without a KWin restart. Guard against re-entrancy during persist().
-    m_configWatcher = KConfigWatcher::create(KSharedConfig::openConfig(QStringLiteral("kwinrc")));
-    connect(m_configWatcher.data(), &KConfigWatcher::configChanged, this, [this](const KConfigGroup &, const QByteArrayList &) {
+    // Watch the config directory so external edits to kwinrc reload the
+    // effect without a KWin restart. Watching the directory (not the file)
+    // survives atomic renames performed by editors and by our own persist().
+    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    m_fsWatcher = new QFileSystemWatcher(this);
+    m_fsWatcher->addPath(configDir);
+    m_fsWatcher->addPath(configDir + QStringLiteral("/kwinrc"));
+    auto reloadIfChanged = [this, configDir]() {
+        const QFileInfo fi(configDir + QStringLiteral("/kwinrc"));
+        if (!fi.exists()) {
+            return;
+        }
+        const qint64 mtime = fi.lastModified().toMSecsSinceEpoch();
+        if (m_lastConfigMtime != 0 && mtime == m_lastConfigMtime) {
+            return;
+        }
         if (m_persisting) {
             return;
         }
         if (QDateTime::currentMSecsSinceEpoch() - m_lastPersistMs < 2000) {
             return; // ignore our own recent sync
         }
+        m_lastConfigMtime = mtime;
+        // Re-arm the file watch, which atomic renames drop.
+        if (!m_fsWatcher->files().contains(configDir + QStringLiteral("/kwinrc"))) {
+            m_fsWatcher->addPath(configDir + QStringLiteral("/kwinrc"));
+        }
         reloadConfig();
+    };
+    connect(m_fsWatcher, &QFileSystemWatcher::directoryChanged, this, [reloadIfChanged](const QString &) {
+        reloadIfChanged();
     });
+    connect(m_fsWatcher, &QFileSystemWatcher::fileChanged, this, [reloadIfChanged](const QString &) {
+        reloadIfChanged();
+    });
+    // Seed the baseline mtime so the first external change is detected.
+    {
+        const QFileInfo fi(configDir + QStringLiteral("/kwinrc"));
+        if (fi.exists()) {
+            m_lastConfigMtime = fi.lastModified().toMSecsSinceEpoch();
+        }
+    }
 
     connect(effects, &EffectsHandler::windowDeleted, this, &VibranceEffect::onWindowDeleted);
     connect(effects, &EffectsHandler::windowActivated, this, &VibranceEffect::onWindowActivated);
@@ -172,10 +201,8 @@ VibranceEffect::VibranceEffect()
 
 VibranceEffect::~VibranceEffect()
 {
-    if (m_configWatcher) {
-        m_configWatcher->disconnect(this);
-        m_configWatcher.reset();
-    }
+    // QFileSystemWatcher is parented to this and deleted automatically.
+    m_fsWatcher = nullptr;
     // The debounce timer dies with the effect: flush a change made within
     // the last 500 ms instead of dropping it on unload/logout.
     if (m_persistTimer && m_persistTimer->isActive()) {

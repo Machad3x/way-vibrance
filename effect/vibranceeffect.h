@@ -12,7 +12,7 @@
 
 #include <QDBusAbstractAdaptor>
 #include <QElapsedTimer>
-#include <KConfigWatcher>
+#include <QFileSystemWatcher>
 #include <QRegion>
 #include "common_limits.h"
 #include <QVector3D>
@@ -287,9 +287,10 @@ private:
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;
     QTimer *m_repaintTimer = nullptr;
-    KConfigWatcher::Ptr m_configWatcher;
+    QFileSystemWatcher *m_fsWatcher = nullptr;
     bool m_persisting = false;
     qint64 m_lastPersistMs = 0;
+    qint64 m_lastConfigMtime = 0;
     std::unique_ptr<GLShader> m_shader;
 };
 
