@@ -1236,9 +1236,9 @@ void VibranceEffect::persist()
         QFile::remove(backupPath);
         QFile::copy(configPath, backupPath);
     }
-    config->sync();
+    const bool synced = config->sync();
     const QFileInfo after(configPath);
-    const bool ok = after.exists() && after.size() > 0
+    const bool ok = synced && after.exists() && after.size() > 0
                     && (previousSize == 0 || after.size() >= previousSize / 2);
     if (!ok && QFile::exists(backupPath)) {
         qWarning() << "Way Vibrance: kwinrc sync failed or truncated; restoring backup";
