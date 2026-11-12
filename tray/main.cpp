@@ -13,6 +13,7 @@
 #include "style_p.h"
 #include "switch_p.h"
 #include "version_p.h"
+#include "dbus_security_p.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -117,68 +118,6 @@ static QStringList sanitizeRuleList(const QStringList &in)
 // Identity probes are synchronous by nature (the PID must be known before the
 // interface is trusted), but they are bounded: a wedged bus must not freeze
 // the tray for Qt's 25-second default per call.
-static constexpr int kBusIdentityTimeoutMs = 1000;
-
-/** Unique-name owner of a well-known service, or empty when unowned. */
-static QString serviceOwnerOf(const QString &service, int timeoutMs = kBusIdentityTimeoutMs)
-{
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(
-        QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.DBus"),
-                                       QStringLiteral("/org/freedesktop/DBus"),
-                                       QStringLiteral("org.freedesktop.DBus"),
-                                       QStringLiteral("GetNameOwner"))
-            << service,
-        QDBus::Block, timeoutMs);
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
-        return QString();
-    }
-    return reply.arguments().first().toString();
-}
-
-/** PID of a connection name (well-known or unique); 0 on error. */
-static uint pidOfBusName(const QString &busName, int timeoutMs = kBusIdentityTimeoutMs)
-{
-    if (busName.isEmpty()) {
-        return 0;
-    }
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(
-        QDBusMessage::createMethodCall(QStringLiteral("org.freedesktop.DBus"),
-                                       QStringLiteral("/org/freedesktop/DBus"),
-                                       QStringLiteral("org.freedesktop.DBus"),
-                                       QStringLiteral("GetConnectionUnixProcessID"))
-            << busName,
-        QDBus::Block, timeoutMs);
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
-        return 0;
-    }
-    return reply.arguments().first().toUInt();
-}
-
-/**
- * True when the connection owning org.wayvibrance is the compositor
- * process itself. Checking the well-known name alone is not enough: a
- * session peer can grab it before the effect registers. The authoritative
- * identity is the PID, compared with the owner of org.kde.KWin.
- *
- * Only org.kde.KWin is trusted as the anchor. The legacy
- * org.kde.kwin.Effects name is deliberately NOT accepted: every KWin 6
- * release owns org.kde.KWin unconditionally, and the legacy name is usually
- * free, so accepting it would let a malicious peer own both names and pass
- * the PID comparison. There is no /proc/<pid>/comm fallback either:
- * prctl(PR_SET_NAME) forges process names trivially.
- */
-static bool ownerIsCompositor(const QString &owner)
-{
-    if (owner.isEmpty()) {
-        return false;
-    }
-    const uint pid = pidOfBusName(owner);
-    if (pid == 0) {
-        return false;
-    }
-    const uint kwinPid = pidOfBusName(QStringLiteral("org.kde.KWin"));
-    return kwinPid != 0 && pid == kwinPid;
-}
 
 /**
  * Bridges the UI to the effect over D-Bus, coalescing slider movements so
