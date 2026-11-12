@@ -903,9 +903,11 @@ bool VibranceEffect::ensureShader()
     if (m_shaderGaveUp) {
         return false; // terminal: warn once below, never from the paint path
     }
-    if (m_shaderFailedAttempts > 0 && m_shaderRetryTimer.isValid()
-        && m_shaderRetryTimer.elapsed() < kShaderRetryDelayMs) {
-        return false; // cooldown between compile attempts
+    if (m_shaderFailedAttempts > 0 && m_shaderRetryTimer.isValid()) {
+        const qint64 shaderDelay = qMin<qint64>(kShaderRetryDelayMs * (1LL << qMin(m_shaderFailedAttempts - 1, 4)), 30000);
+        if (m_shaderRetryTimer.elapsed() < shaderDelay) {
+            return false; // cooldown between compile attempts
+        }
     }
     m_shader = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture, QString(),
                                                                  QLatin1String(s_shaderPath));
@@ -1015,9 +1017,13 @@ GLShader *VibranceEffect::shaderForGains(const QVector3D &gains)
         return nullptr;
     }
 
-    if (m_variantRetryTimer.isValid() && m_variantRetryTimer.elapsed() < kShaderRetryDelayMs) {
-        // A variant compile just failed: do not retry from every frame.
-        return nullptr;
+    if (m_variantRetryTimer.isValid()) {
+        const int priorFailures = m_variantFailures.value(key, 0);
+        const qint64 variantDelay = qMin<qint64>(kShaderRetryDelayMs * (1LL << qMin(priorFailures, 4)), 30000);
+        if (m_variantRetryTimer.elapsed() < variantDelay) {
+            // A variant compile just failed: do not retry from every frame.
+            return nullptr;
+        }
     }
     // A gain set gets the same bounded attempts as the global shader. Without
     // this ceiling a hostile profile editor could keep paying a compile
