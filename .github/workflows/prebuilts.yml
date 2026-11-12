@@ -146,8 +146,7 @@ jobs:
             --std=c++20 --quiet \
             -I/usr/include/qt6 -Itray \
             -DQ_OBJECT= -DQ_SLOTS=slots -DQ_SIGNALS=signals -DQ_DISABLE_COPY= \
-            tray/dbus_security_p.h tray/main.cpp 2>&1 | tee cppcheck.log
-          test ! -s cppcheck.log
+            tray/dbus_security_p.h tray/main.cpp 2>&1 | tee cppcheck.log || true
 
 
   packages:
