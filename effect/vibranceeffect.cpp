@@ -26,12 +26,14 @@
 
 #include <KConfigGroup>
 #include <KSharedConfig>
+#include <KConfigWatcher>
 
 #include <QDebug>
 #include <QDBusConnection>
 #include <QSet>
 #include <QTimer>
 #include <QUrl>
+#include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -117,6 +119,19 @@ VibranceEffect::VibranceEffect()
     });
 
     reloadConfig();
+
+    // Watch kwinrc so external edits (or our own sync) keep the effect in
+    // sync without a KWin restart. Guard against re-entrancy during persist().
+    m_configWatcher = KConfigWatcher::create(KSharedConfig::openConfig(QStringLiteral("kwinrc")));
+    connect(m_configWatcher.data(), &KConfigWatcher::configChanged, this, [this](const KConfigGroup &, const QByteArrayList &) {
+        if (m_persisting) {
+            return;
+        }
+        if (QDateTime::currentMSecsSinceEpoch() - m_lastPersistMs < 2000) {
+            return; // ignore our own recent sync
+        }
+        reloadConfig();
+    });
 
     connect(effects, &EffectsHandler::windowDeleted, this, &VibranceEffect::onWindowDeleted);
     connect(effects, &EffectsHandler::windowActivated, this, &VibranceEffect::onWindowActivated);
