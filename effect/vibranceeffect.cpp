@@ -32,6 +32,9 @@
 #include <QSet>
 #include <QTimer>
 #include <QUrl>
+#include <QFile>
+#include <QFileInfo>
+#include <QStandardPaths>
 
 #include <algorithm>
 #include <cmath>
@@ -1186,7 +1189,27 @@ void VibranceEffect::persist()
     } else {
         cfg.writeEntry(QString::fromLatin1(s_rulesOrderKey), order);
     }
+    // Defensive persistence: back up kwinrc before syncing, then validate
+    // the result. A crash or a wedged disk during sync() must not leave a
+    // truncated/corrupt kwinrc behind — restore the backup on failure.
+    const QString configDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    const QString configPath = configDir + QStringLiteral("/kwinrc");
+    const QString backupPath = configPath + QStringLiteral(".bak");
+    const QFileInfo before(configPath);
+    const qint64 previousSize = before.exists() ? before.size() : 0;
+    if (before.exists()) {
+        QFile::remove(backupPath);
+        QFile::copy(configPath, backupPath);
+    }
     config->sync();
+    const QFileInfo after(configPath);
+    const bool ok = after.exists() && after.size() > 0
+                    && (previousSize == 0 || after.size() >= previousSize / 2);
+    if (!ok && QFile::exists(backupPath)) {
+        qWarning() << "Way Vibrance: kwinrc sync failed or truncated; restoring backup";
+        QFile::remove(configPath);
+        QFile::copy(backupPath, configPath);
+    }
 }
 
 WayVibranceAdaptor::WayVibranceAdaptor(VibranceEffect *effect)
