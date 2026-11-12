@@ -101,10 +101,27 @@ VibranceEffect::VibranceEffect()
     m_persistTimer->setInterval(500);
     connect(m_persistTimer, &QTimer::timeout, this, &VibranceEffect::persist);
 
+    // Coalesce repaint requests so a burst of D-Bus/config changes does not
+    // force one full repaint per call.
+    m_repaintTimer = new QTimer(this);
+    m_repaintTimer->setSingleShot(true);
+    m_repaintTimer->setInterval(16);
+    connect(m_repaintTimer, &QTimer::timeout, this, [this]() {
+        if (effects) {
+            effects->addRepaintFull();
+        }
+    });
+
     reloadConfig();
 
     connect(effects, &EffectsHandler::windowDeleted, this, &VibranceEffect::onWindowDeleted);
     connect(effects, &EffectsHandler::windowActivated, this, &VibranceEffect::onWindowActivated);
+    connect(effects, &EffectsHandler::screenAdded, this, [this](LogicalOutput *) {
+        m_screensCacheValid = false;
+    });
+    connect(effects, &EffectsHandler::screenRemoved, this, [this](LogicalOutput *) {
+        m_screensCacheValid = false;
+    });
 
     QDBusConnection bus = QDBusConnection::sessionBus();
     m_dbusRegistered = bus.registerService(QString::fromLatin1(s_dbusServiceName));
@@ -244,7 +261,11 @@ bool VibranceEffect::windowInScope(EffectWindow *w) const
     // mouse — which is not what "primary monitor" means. Version-tolerant:
     // every type here is deduced (auto), so whatever the installed KWin
     // calls its output classes, the effect compiles unchanged.
-    const auto screens = effects->screens();
+    if (!m_screensCacheValid) {
+        m_cachedScreens = effects->screens();
+        m_screensCacheValid = true;
+    }
+    const auto &screens = m_cachedScreens;
     if (screens.isEmpty()) {
         return true;
     }
@@ -280,7 +301,7 @@ void VibranceEffect::setPrimaryOutputName(const QString &name)
     m_primaryOutputName = trimmed;
     Q_EMIT primaryOutputNameChanged(m_primaryOutputName);
     m_persistTimer->start();
-    effects->addRepaintFull();
+    scheduleRepaint();
 }
 
 QStringList VibranceEffect::screenList() const
@@ -405,7 +426,7 @@ void VibranceEffect::reloadConfig()
     Q_EMIT appRulesChanged(appRules());
 
     if (effects) {
-        effects->addRepaintFull();
+        scheduleRepaint();
     }
 }
 
@@ -601,7 +622,7 @@ void VibranceEffect::applyRule(const QString &prefixedPattern, qreal vibrance,
     updateRedirects();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
-    effects->addRepaintFull();
+    scheduleRepaint();
 }
 
 void VibranceEffect::setAppRule(const QString &prefixedPattern, qreal vibrance)
@@ -684,7 +705,7 @@ void VibranceEffect::removeAppRule(const QString &prefixedPattern)
     updateRedirects();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
-    effects->addRepaintFull();
+    scheduleRepaint();
 }
 
 void VibranceEffect::clearAppRules()
@@ -697,7 +718,7 @@ void VibranceEffect::clearAppRules()
     updateRedirects();
     Q_EMIT appRulesChanged(appRules());
     m_persistTimer->start();
-    effects->addRepaintFull();
+    scheduleRepaint();
 }
 
 QStringList VibranceEffect::appRules() const
@@ -765,7 +786,7 @@ void VibranceEffect::resolveWindow(EffectWindow *w)
         return;
     }
     int budget = kResolveStepBudget; // aggregate across every rule of this pass
-    for (int i = 0; i < m_rules.size(); ++i) {
+    for (int i = 0; i < m_rules.size() && budget > 0; ++i) {
         const AppRule &rule = m_rules.at(i);
         if (rule.pattern.isEmpty()) {
             continue;
@@ -861,10 +882,13 @@ void VibranceEffect::updateShaderUniforms()
 
 QString VibranceEffect::gainsKey(const QVector3D &gains)
 {
+    // Keep enough significant digits to round-trip a 32-bit float exactly:
+    // the previous 0.001 (1000x) quantization could collide distinct gain
+    // values and hand a window the wrong per-profile shader.
     return QStringLiteral("%1_%2_%3")
-        .arg(qRound(gains.x() * 1000.0))
-        .arg(qRound(gains.y() * 1000.0))
-        .arg(qRound(gains.z() * 1000.0));
+        .arg(static_cast<double>(gains.x()), 0, 'g', 9)
+        .arg(static_cast<double>(gains.y()), 0, 'g', 9)
+        .arg(static_cast<double>(gains.z()), 0, 'g', 9);
 }
 
 /**
@@ -979,6 +1003,16 @@ void VibranceEffect::unredirectAllApplied()
     }
 }
 
+void VibranceEffect::scheduleRepaint()
+{
+    if (!m_repaintTimer) {
+        return;
+    }
+    if (!m_repaintTimer->isActive()) {
+        m_repaintTimer->start();
+    }
+}
+
 void VibranceEffect::updateRedirects()
 {
     // Redirects themselves are applied lazily inside drawWindow (the only
@@ -992,7 +1026,7 @@ void VibranceEffect::updateRedirects()
     if (!isActive()) {
         unredirectAllApplied();
     }
-    effects->addRepaintFull();
+    scheduleRepaint();
 }
 
 void VibranceEffect::setVibrance(qreal value)
@@ -1029,7 +1063,7 @@ void VibranceEffect::setVibranceEnabled(bool enabled)
     updateRedirects();
     Q_EMIT enabledChanged(m_enabled);
     m_persistTimer->start();
-    effects->addRepaintFull();
+    scheduleRepaint();
 }
 
 bool VibranceEffect::vibranceEnabled() const
@@ -1050,7 +1084,7 @@ void VibranceEffect::setPrimaryOnly(bool primaryOnly)
     m_primaryOnly = primaryOnly;
     Q_EMIT primaryOnlyChanged(m_primaryOnly);
     m_persistTimer->start();
-    effects->addRepaintFull();
+    scheduleRepaint();
 }
 
 bool VibranceEffect::primaryOnly() const
@@ -1076,7 +1110,7 @@ void VibranceEffect::setRGBGains(qreal red, qreal green, qreal blue)
     updateRedirects();
     Q_EMIT rgbGainsChanged(m_rgbGains.x(), m_rgbGains.y(), m_rgbGains.z());
     m_persistTimer->start();
-    effects->addRepaintFull();
+    scheduleRepaint();
 }
 
 qreal VibranceEffect::redGain() const

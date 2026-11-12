@@ -244,6 +244,7 @@ private:
     void updateShaderUniforms();
     void updateRedirects();
     void unredirectAllApplied();
+    void scheduleRepaint();
     GLShader *shaderForGains(const QVector3D &gains);
     static QString gainsKey(const QVector3D &gains);
 
@@ -258,6 +259,11 @@ private:
     QVector<AppRule> m_rules;
     QHash<EffectWindow *, WindowMatch> m_windowMatch;
     quint64 m_matchStamp = 0;
+    // Cached output list for the primary-monitor scope check (invalidated
+    // on screen add/remove; effects->screens() is otherwise queried per
+    // window per frame).
+    mutable QList<LogicalOutput *> m_cachedScreens;
+    mutable bool m_screensCacheValid = false;
     QString m_lastFocusedAppId;
     struct ShaderVariant {
         std::shared_ptr<GLShader> shader;
@@ -274,6 +280,7 @@ private:
     QHash<QString, int> m_variantFailures;
     bool m_dbusRegistered = false;
     QTimer *m_persistTimer = nullptr;
+    QTimer *m_repaintTimer = nullptr;
     std::unique_ptr<GLShader> m_shader;
 };
 
